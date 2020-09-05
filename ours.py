@@ -1,7 +1,8 @@
 from typing import Optional, Tuple
 
 import torch
-from torch.nn import Parameter
+from torch.nn import Parameter, Linear
+from torch.nn.init import xavier_uniform_
 
 import model
 import multihead_attention
@@ -13,12 +14,10 @@ def with_last_col_1(x: Tensor, last1=None):
     if last1 is None:
         last1 = torch.zeros_like(x)
         last1[..., -1] = 1
-    # noinspection PyTypeChecker
     return last1 * (1 - x) + (1 - last1) * x
 
 
 def scan(x: Tensor) -> Tensor:
-    # noinspection PyTypeChecker,PyUnresolvedReferences
     return with_last_col_1((1 - x).cumprod(-1)).roll(1, -1) * x
 
 
@@ -30,9 +29,12 @@ def scan_in_time(x: Tensor) -> Tensor:
 
 class MultiheadAttention(multihead_attention.MultiheadAttention):
     def __init__(self, embed_dim, num_heads, *args, **kwargs):
-        super().__init__(embed_dim, num_heads, *args, **kwargs)
         head_dim = embed_dim // num_heads
+        super().__init__(embed_dim, num_heads, *args, **kwargs)
         self.connect_proj_weight = Parameter(torch.Tensor(head_dim, head_dim))
+        # self.linear = Linear(head_dim, 4)
+        xavier_uniform_(self.connect_proj_weight)
+        # xavier_uniform_(self.linear.weight)
 
     # noinspection PyPep8Naming
     def get_attn_output_weights(self, k, q):  # type: (Tensor, Tensor) -> Tensor
@@ -53,9 +55,26 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
             - attn_output_weights: :math:`(B * H, L, S)` where B is the batch size, H is the number of heads, L is the
             is the target sequence length and S is the source sequence length.
         """
-        connections = q @ self.connect_proj_weight @ k.transpose(1, 2)  # (N, L, S)
-        # TODO: add backward scan, 1 step forward, 1 step backward.
-        return scan_in_time(connections)
+        L = q.size(1)
+        S = k.size(1)
+        forward_connections = (
+            q @ self.connect_proj_weight @ k.transpose(1, 2)
+        )  # (N, L, S)
+        backward_connections = (
+            q @ self.connect_proj_weight.T @ k.transpose(1, 2)
+        )  # (N, L, S)
+        scan_forward = scan_in_time(forward_connections)
+        scan_backward = scan_in_time(backward_connections)
+        eye = torch.eye(L, S, device=q.device)
+        step_forward = eye.roll(1, -1)
+        step_backward = eye.roll(-1, -1)
+        step_forward[-1, 0] = 0
+        step_forward[-1, -1] = 1
+        step_backward[0, -1] = 0
+        step_backward[0, 0] = 1
+        # softmax = self.linear(q).softmax(-1)
+
+        return scan_forward
 
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):
