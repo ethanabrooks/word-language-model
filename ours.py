@@ -25,10 +25,15 @@ def scan_in_time(x: Tensor) -> Tensor:
 
 
 def self_cat(x: Tensor) -> Tensor:
-    *_, n, d = x.shape
+    *r, n, d = x.shape
+    negs = [-1 for _ in r]
     return torch.cat(
-        [x.unsqueeze(0).expand(n, -1, -1), x.unsqueeze(1).expand(-1, n, -1)], dim=-1
-    ).reshape(n ** 2, d * 2)
+        [
+            x.unsqueeze(-3).expand(*negs, n, -1, -1),
+            x.unsqueeze(-2).expand(*negs, -1, n, -1),
+        ],
+        dim=-1,
+    ).reshape(*r, n ** 2, d * 2)
 
 
 class MultiheadAttention(multihead_attention.MultiheadAttention):
@@ -41,4 +46,4 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
         need_weights: bool = True,
         attn_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
-    raise NotImplementedError
+        raise NotImplementedError
