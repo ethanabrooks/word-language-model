@@ -70,7 +70,6 @@ def add_arguments(parser):
     parser.add_argument(
         "--onnx-export",
         type=Path,
-        default="",
         help="path to export the final model in onnx format",
     )
     parser.add_argument(
@@ -132,7 +131,7 @@ def run(
     n_head: int,
     n_hid: int,
     n_layers: int,
-    onnx_export: Path,
+    onnx_export: Optional[Path],
     save: str,
     seed: int,
     tied: bool,
@@ -258,21 +257,10 @@ def run(
 
             if batch % log_interval == 0 and batch > 0:
                 cur_loss = total_loss / log_interval
-                elapsed = time.time() - start_time
-                print(
-                    "| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | "
-                    "loss {:5.2f} | ppl {:8.2f}".format(
-                        epoch,
-                        batch,
-                        len(train_data) // bptt,
-                        lr,
-                        elapsed * 1000 / log_interval,
-                        cur_loss,
-                        math.exp(cur_loss),
-                    )
+                tune.report(
+                    epoch=epoch, batch=batch, loss=cur_loss, ppl=math.exp(cur_loss)
                 )
                 total_loss = 0
-                start_time = time.time()
             if dry_run:
                 break
 
@@ -315,24 +303,12 @@ def run(
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
             train()
-            loss = evaluate(val_data)
-            tune.report(loss=loss)
-            # print("-" * 89)
-            # print(
-            #     "| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | "
-            #     "valid ppl {:8.2f}".format(
-            #         epoch,
-            #         (time.time() - epoch_start_time),
-            #         val_loss,
-            #         math.exp(val_loss),
-            #     )
-            # )
-            # print("-" * 89)
-            # Save the model if the validation loss is the best we've seen so far.
-            if not best_val_loss or loss < best_val_loss:
+            val_loss = evaluate(val_data)
+            tune.report(val_loss=val_loss)
+            if not best_val_loss or val_loss < best_val_loss:
                 with open(save, "wb") as f:
                     torch.save(model, f)
-                best_val_loss = loss
+                best_val_loss = val_loss
             else:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
                 lr /= 4.0
@@ -351,15 +327,9 @@ def run(
 
     # Run on test data.
     test_loss = evaluate(test_data)
-    print("=" * 89)
-    print(
-        "| End of training | test loss {:5.2f} | test ppl {:8.2f}".format(
-            test_loss, math.exp(test_loss)
-        )
-    )
-    print("=" * 89)
+    tune.report(test_loss=test_loss, test_ppl=math.exp(test_loss))
 
-    if len(onnx_export) > 0:
+    if onnx_export:
         # Export the model in ONNX format.
         export_onnx(onnx_export, batch_size=1, seq_len=bptt)
 
@@ -388,7 +358,7 @@ def main(
         kwargs = dict()
     else:
         kwargs = dict(
-            search_alg=HyperOptSearch(config, metric="loss"),
+            search_alg=HyperOptSearch(config, metric="val_loss"),
             num_samples=n_samples,
         )
 

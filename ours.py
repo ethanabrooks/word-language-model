@@ -32,9 +32,9 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
         head_dim = embed_dim // num_heads
         super().__init__(embed_dim, num_heads, *args, **kwargs)
         self.connect_proj_weight = Parameter(torch.Tensor(head_dim, head_dim))
-        # self.linear = Linear(head_dim, 4)
+        self.linear = Linear(head_dim, 2)
         xavier_uniform_(self.connect_proj_weight)
-        # xavier_uniform_(self.linear.weight)
+        xavier_uniform_(self.linear.weight)
 
     # noinspection PyPep8Naming
     def get_attn_output_weights(self, k, q):  # type: (Tensor, Tensor) -> Tensor
