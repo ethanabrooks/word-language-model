@@ -109,3 +109,6 @@ class TransformerModel(models.TransformerModel):
     @staticmethod
     def build_transformer_encoder_layer(dropout, nhead, nhid, ninp):
         return TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+
+    def encode_pos(self, src):
+        return src

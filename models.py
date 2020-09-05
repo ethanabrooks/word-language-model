@@ -168,8 +168,12 @@ class TransformerModel(nn.Module):
         else:
             self.src_mask = None
 
-        src = self.encoder(src) * math.sqrt(self.ninp)
-        src = self.pos_encoder(src)
+        src = self.encode_pos(self.encoder(src))
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)
         return F.log_softmax(output, dim=-1)
+
+    def encode_pos(self, src):
+        src = src * math.sqrt(self.ninp)
+        src = self.pos_encoder(src)
+        return src
