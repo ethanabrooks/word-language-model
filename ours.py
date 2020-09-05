@@ -4,7 +4,7 @@ import torch
 from torch.nn import Parameter, Linear
 from torch.nn.init import xavier_uniform_
 
-import model
+import models
 import multihead_attention
 import transformer
 from torch import Tensor
@@ -105,7 +105,7 @@ class Transformer(transformer.Transformer):
         )
 
 
-class TransformerModel(model.TransformerModel):
+class TransformerModel(models.TransformerModel):
     @staticmethod
     def build_transformer_encoder_layer(dropout, nhead, nhid, ninp):
         return TransformerEncoderLayer(ninp, nhead, nhid, dropout)
