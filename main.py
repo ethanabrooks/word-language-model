@@ -358,7 +358,7 @@ def main(
         kwargs = dict()
     else:
         kwargs = dict(
-            search_alg=HyperOptSearch(config, metric="val_loss"),
+            search_alg=HyperOptSearch(config, metric="test_loss"),
             num_samples=n_samples,
         )
 
