@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.onnx
 from ray import tune
-from ray.tune.suggest import HyperOptSearch
+from ray.tune.suggest.hyperopt import HyperOptSearch
 
 from data import Corpus
 
@@ -131,10 +131,10 @@ def run(
     n_head: int,
     n_hid: int,
     n_layers: int,
-    onnx_export: Optional[Path],
     save: str,
     seed: int,
     tied: bool,
+    onnx_export: Optional[Path] = None,
 ):
     # Set the random seed manually for reproducibility.
     torch.manual_seed(seed)

@@ -11,4 +11,5 @@ RUN pip install https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.9.0.d
 RUN pip install ipdb
 
 WORKDIR "/root"
+VOLUME ["/data"]
 COPY . .
