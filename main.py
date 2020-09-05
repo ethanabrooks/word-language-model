@@ -2,10 +2,15 @@
 import argparse
 import time
 import math
-import os
+from pathlib import Path
+from typing import Optional
+
+import ray
 import torch
 import torch.nn as nn
 import torch.onnx
+from ray import tune
+from ray.tune.suggest import HyperOptSearch
 
 from data import Corpus
 
@@ -15,10 +20,58 @@ import ours
 
 def add_arguments(parser):
     parser.add_argument(
-        "--data",
+        "--batch_size", type=int, default=20, metavar="N", help="batch size"
+    )
+    parser.add_argument("--bptt", type=int, default=35, help="sequence length")
+    parser.add_argument("--cuda", action="store_true", help="use CUDA")
+    parser.add_argument("--clip", type=float, default=0.25, help="gradient clipping")
+    parser.add_argument(
+        "--config",
         type=str,
+        help="config file to use for Experiment",
+    )
+    parser.add_argument(
+        "--cpus-per-trial",
+        "-c",
+        type=int,
+        default=6,
+        help="CPU resources to allocate per trial.",
+    )
+    parser.add_argument(
+        "--data",
+        type=Path,
         default="./data/wikitext-2",
         help="location of the data corpus",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.2,
+        help="dropout applied to layers (0 = no dropout)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="verify the code and the model"
+    )
+    parser.add_argument(
+        "--em-size", type=int, default=200, help="size of word embeddings"
+    )
+    parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
+    parser.add_argument(
+        "--gpus-per-trial",
+        "-g",
+        type=int,
+        default=1,
+        help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
+    )
+    parser.add_argument(
+        "--log-interval", type=int, default=200, metavar="N", help="report interval"
+    )
+    parser.add_argument("--lr", type=float, default=20, help="initial learning rate")
+    parser.add_argument(
+        "--onnx-export",
+        type=Path,
+        default="",
+        help="path to export the final model in onnx format",
     )
     parser.add_argument(
         "--model",
@@ -27,50 +80,30 @@ def add_arguments(parser):
         help="type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, transformer, ours)",
     )
     parser.add_argument(
-        "--emsize", type=int, default=200, help="size of word embeddings"
+        "--name",
+        help="Name of experiment",
     )
     parser.add_argument(
-        "--nhid", type=int, default=200, help="number of hidden units per layer"
-    )
-    parser.add_argument("--nlayers", type=int, default=2, help="number of layers")
-    parser.add_argument("--lr", type=float, default=20, help="initial learning rate")
-    parser.add_argument("--clip", type=float, default=0.25, help="gradient clipping")
-    parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
-    parser.add_argument(
-        "--batch_size", type=int, default=20, metavar="N", help="batch size"
-    )
-    parser.add_argument("--bptt", type=int, default=35, help="sequence length")
-    parser.add_argument(
-        "--dropout",
-        type=float,
-        default=0.2,
-        help="dropout applied to layers (0 = no dropout)",
-    )
-    parser.add_argument(
-        "--tied", action="store_true", help="tie the word embedding and softmax weights"
-    )
-    parser.add_argument("--seed", type=int, default=1111, help="random seed")
-    parser.add_argument("--cuda", action="store_true", help="use CUDA")
-    parser.add_argument(
-        "--log-interval", type=int, default=200, metavar="N", help="report interval"
-    )
-    parser.add_argument(
-        "--save", type=str, default="model.pt", help="path to save the final model"
-    )
-    parser.add_argument(
-        "--onnx-export",
-        type=str,
-        default="",
-        help="path to export the final model in onnx format",
-    )
-    parser.add_argument(
-        "--nhead",
+        "--n-head",
         type=int,
         default=2,
         help="the number of heads in the encoder/decoder of the transformer model",
     )
     parser.add_argument(
-        "--dry-run", action="store_true", help="verify the code and the model"
+        "--n-hid", type=int, default=200, help="number of hidden units per layer"
+    )
+    parser.add_argument("--n-layers", type=int, default=2, help="number of layers")
+    parser.add_argument(
+        "--n-samples",
+        type=int,
+        help="Number of times to sample from the hyperparameter space. If not set, tune will be run in local mode.",
+    )
+    parser.add_argument(
+        "--save", type=str, default="model.pt", help="path to save the final model"
+    )
+    parser.add_argument("--seed", type=int, default=1111, help="random seed")
+    parser.add_argument(
+        "--tied", action="store_true", help="tie the word embedding and softmax weights"
     )
 
 
@@ -83,23 +116,23 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
-def main(
+def run(
     batch_size: int,
     bptt: int,
     clip: float,
     cuda: bool,
-    data: str,
+    data: Path,
     dropout: float,
     dry_run: bool,
-    emsize: int,
+    em_size: int,
     epochs: int,
     log_interval: int,
     lr: float,
     model: str,
-    nhead: int,
-    nhid: int,
-    nlayers: int,
-    onnx_export: str,
+    n_head: int,
+    n_hid: int,
+    n_layers: int,
+    onnx_export: Path,
     save: str,
     seed: int,
     tied: bool,
@@ -130,14 +163,14 @@ def main(
     # dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
     # batch processing.
 
-    def batchify(data, bsz):
+    def batchify(data_source, bsz):
         # Work out how cleanly we can divide the dataset into bsz parts.
-        nbatch = data.size(0) // bsz
+        n_batch = data_source.size(0) // bsz
         # Trim off any extra elements that wouldn't cleanly fit (remainders).
-        data = data.narrow(0, 0, nbatch * bsz)
+        data_source = data_source.narrow(0, 0, n_batch * bsz)
         # Evenly divide the data across the bsz batches.
-        data = data.view(bsz, -1).t().contiguous()
-        return data.to(device)
+        data_source = data_source.view(bsz, -1).t().contiguous()
+        return data_source.to(device)
 
     corpus = Corpus(data)
     eval_batch_size = 10
@@ -149,23 +182,23 @@ def main(
     # Build the model
     ###############################################################################
 
-    ntokens = len(corpus.dictionary)
+    n_tokens = len(corpus.dictionary)
     recurrent = model not in ["transformer", "ours"]
     if model == "transformer":
         model = models.TransformerModel(
-            ntokens, emsize, nhead, nhid, nlayers, dropout
+            n_tokens, em_size, n_head, n_hid, n_layers, dropout
         ).to(device)
     elif model == "ours":
         model = ours.TransformerModel(
-            ntokens, emsize, nhead, nhid, nlayers, dropout
+            n_tokens, em_size, n_head, n_hid, n_layers, dropout
         ).to(device)
     else:
         model = models.RNNModel(
             model,
-            ntokens,
-            emsize,
-            nhid,
-            nlayers,
+            n_tokens,
+            em_size,
+            n_hid,
+            n_layers,
             dropout,
             tied,
         ).to(device)
@@ -201,8 +234,7 @@ def main(
         total_loss = 0.0
         start_time = time.time()
         ntokens = len(corpus.dictionary)
-        if recurrent:
-            hidden = model.init_hidden(batch_size)
+        hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, i in enumerate(range(0, train_data.size(0) - 1, bptt)):
             data, targets = get_batch(train_data, i)
             # Starting each batch, we detach the hidden state from how it was previously produced.
@@ -248,7 +280,6 @@ def main(
         # Turn on evaluation mode which disables dropout.
         model.eval()
         total_loss = 0.0
-        ntokens = len(corpus.dictionary)
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
@@ -256,7 +287,7 @@ def main(
                 data, targets = get_batch(data_source, i)
                 if not recurrent:
                     output = model(data)
-                    output = output.view(-1, ntokens)
+                    output = output.view(-1, n_tokens)
                 else:
                     output, hidden = model(data, hidden)
                     hidden = repackage_hidden(hidden)
@@ -266,7 +297,7 @@ def main(
     def export_onnx(path, batch_size, seq_len):
         print(
             "The model is also exported in ONNX format at {}".format(
-                os.path.realpath(onnx_export)
+                onnx_export.absolute()
             )
         )
         model.eval()
@@ -282,25 +313,26 @@ def main(
     # At any point you can hit Ctrl + C to break out of training early.
     try:
         for epoch in range(1, epochs + 1):
-            epoch_start_time = time.time()
+            # epoch_start_time = time.time()
             train()
-            val_loss = evaluate(val_data)
-            print("-" * 89)
-            print(
-                "| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | "
-                "valid ppl {:8.2f}".format(
-                    epoch,
-                    (time.time() - epoch_start_time),
-                    val_loss,
-                    math.exp(val_loss),
-                )
-            )
-            print("-" * 89)
+            loss = evaluate(val_data)
+            tune.report(loss=loss)
+            # print("-" * 89)
+            # print(
+            #     "| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | "
+            #     "valid ppl {:8.2f}".format(
+            #         epoch,
+            #         (time.time() - epoch_start_time),
+            #         val_loss,
+            #         math.exp(val_loss),
+            #     )
+            # )
+            # print("-" * 89)
             # Save the model if the validation loss is the best we've seen so far.
-            if not best_val_loss or val_loss < best_val_loss:
+            if not best_val_loss or loss < best_val_loss:
                 with open(save, "wb") as f:
                     torch.save(model, f)
-                best_val_loss = val_loss
+                best_val_loss = loss
             else:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
                 lr /= 4.0
@@ -330,6 +362,47 @@ def main(
     if len(onnx_export) > 0:
         # Export the model in ONNX format.
         export_onnx(onnx_export, batch_size=1, seq_len=bptt)
+
+
+def main(
+    config: Optional[dict],
+    cpus_per_trial: int,
+    data: Path,
+    epochs: int,
+    gpus_per_trial: int,
+    n_samples: int,
+    name: str,
+    **kwargs,
+):
+    if config is None:
+        config = dict()
+
+    for k, v in kwargs.items():
+        if v is not None:
+            config[k] = v
+
+    config.update(epochs=epochs, data=data.absolute())
+    local_mode = n_samples is None
+    ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
+    if local_mode:
+        kwargs = dict()
+    else:
+        kwargs = dict(
+            search_alg=HyperOptSearch(config, metric="loss"),
+            num_samples=n_samples,
+        )
+
+    def _run(c):
+        run(**c)
+
+    tune.run(
+        _run,
+        name=name,
+        config=config,
+        resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
+        stop=dict(training_iteration=epochs),
+        **kwargs,
+    )
 
 
 if __name__ == "__main__":
