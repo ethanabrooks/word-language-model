@@ -67,21 +67,25 @@ def run(
     eval_batch_size = 10
     if debug_dataset:
         if not data.exists():
-            size = 10000
+            n_seq = 10000
+            seq_len = bptt
             n_tokens = 10
             p = 0.8
             print(
-                f"Data not found. Generating DebugDataset with size {size}, {n_tokens} tokens, and p={p}"
+                f"Data not found. Generating DebugDataset with size {n_seq} x {seq_len}, {n_tokens} tokens, and p={p}"
             )
-            DebugDataset.generate(data, seed, size=size, n_tokens=n_tokens, p=p)
-        dataset = DebugDataset(data, bptt)
-        size = len(dataset)
-        size_valid = int(size * 0.2)
-        size_test = int(size * 0.1)
+            DebugDataset.generate(
+                data, seed, n_seq=n_seq, seq_len=seq_len, n_tokens=n_tokens, p=p
+            )
+        dataset = DebugDataset(data)
+        assert bptt == dataset.bptt
+        n_seq = len(dataset)
+        size_valid = int(n_seq * 0.2)
+        size_test = int(n_seq * 0.1)
         train_data, val_data, test_data = (
-            DataLoader(ds, batch_size=batch_size)
-            for ds in torch.utils.data.random_split(
-                dataset, [size - size_test - size_valid, size_valid, size_test]
+            DataLoader(d, batch_size=batch_size)
+            for d in torch.utils.data.random_split(
+                dataset, [n_seq - size_test - size_valid, size_valid, size_test]
             )
         )
         n_tokens = dataset.n_tokens
@@ -130,20 +134,19 @@ def run(
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, (data, targets) in enumerate(train_data):
             data = data.to(device)
-            targets = targets.to(device).view(-1)
+            targets = targets.to(device)
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
             if not recurrent:
                 output = model(data)
-                output = output.view(-1, n_tokens)
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
             is_accurate = output.max(-1).indices == targets
             assert isinstance(is_accurate, torch.Tensor)
             accuracy = torch.mean(is_accurate.float())
-            loss = criterion(output, targets)
+            loss = criterion(output.reshape(-1, n_tokens), targets.view(-1))
             loss.backward()
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -154,9 +157,9 @@ def run(
             info = dict(epoch=epoch, batch=batch)
             mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
             write_info = dict(
-                data=data[:, 0],
-                output=output.view(*data.shape, -1)[:, 0],
-                targets=targets.view(data.shape)[:, 0],
+                data=data[ 0],
+                output=output.view(*data.shape, -1)[ 0],
+                targets=targets.view(data.shape)[ 0],
             )
             yield info, mean_info, write_info
             if dry_run:
@@ -169,13 +172,15 @@ def run(
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
             for i, (data, targets) in enumerate(data_source):
-                targets = targets.view(-1)
+                data = data.to(device)
+                targets = targets.to(device)
                 if not recurrent:
                     output = model(data)
-                    output = output.view(-1, n_tokens)
                 else:
                     output, hidden = model(data, hidden)
                     hidden = repackage_hidden(hidden)
+                output = output.reshape(-1, n_tokens)
+                targets = targets.view(-1)
                 yield len(data) * criterion(output, targets).item()
 
     def export_onnx(path, batch_size, seq_len):

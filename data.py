@@ -70,35 +70,43 @@ class LMDataset(Dataset):
 
 
 class DebugDataset(Dataset):
-    def __init__(self, path: Path, bptt: int):
-        arrays = np.load(str(path.with_suffix(".npz")))
+    def __init__(self, path: Path):
+        arrays = np.load(str(path))
         self.target = torch.Tensor(arrays["target"]).long()
         self.data = torch.Tensor(arrays["data"]).long()
         self.n_tokens = 1 + torch.Tensor(arrays["mapping"]).size(0)
-        self.bptt = bptt
+        # print("MAPPING")
+        # for i, row in enumerate(arrays["mapping"].T):
+            # print(i, np.arange(self.n_tokens - 1)[row])
+        self.bptt = self.data.size(1)
 
     @staticmethod
     def generate_targets(data: np.ndarray, mapping: np.ndarray, n_tokens: int):
         np.fill_diagonal(mapping, 0)
-        prev = [None for _ in range(n_tokens)]
-        for word in tqdm(data):
-            yield prev[word] or n_tokens
-            for w in np.arange(n_tokens)[mapping[word]]:
-                prev[w] = word
+        for sentence in tqdm(data):
+            prev = [None for _ in range(n_tokens)]
+            for word in sentence:
+                yield prev[word] or n_tokens
+                for w in np.arange(n_tokens)[mapping[word]]:
+                    prev[w] = word
 
     @classmethod
-    def generate(cls, path: Path, seed: int, size: int, n_tokens: int, p: float):
+    def generate(
+        cls, path: Path, seed: int, n_seq: int, seq_len: int, n_tokens: int, p: float
+    ):
         path.parent.mkdir(parents=True, exist_ok=True)
         np.random.seed(seed)
-        data = np.random.choice(n_tokens, size)
+        data = np.random.choice(n_tokens, (n_seq, seq_len))
         mapping = np.random.choice(2, (n_tokens, n_tokens), p=[p, 1 - p]).astype(bool)
-        target = list(cls.generate_targets(data, mapping, n_tokens))
+        target = np.array(list(cls.generate_targets(data, mapping, n_tokens))).reshape(
+            n_seq, seq_len
+        )
         np.savez(str(path), data=data, target=target, mapping=mapping)
 
     def __getitem__(self, index):
-        data = self.data[index : index + self.bptt]
-        target = self.target[index : index + self.bptt]
+        data = self.data[index]
+        target = self.target[index]
         return data, target
 
     def __len__(self):
-        return len(self.target) - self.bptt
+        return len(self.data)
