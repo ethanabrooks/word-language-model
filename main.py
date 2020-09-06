@@ -292,7 +292,7 @@ def run(
                     batch=batch,
                     loss=cur_loss,
                     ppl=math.exp(cur_loss),
-                    accuracy=cur_accuracy,
+                    accuracy=float(cur_accuracy),
                 )
                 total_accuracy = 0
                 total_loss = 0
