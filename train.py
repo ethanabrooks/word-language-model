@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 import models
 import ours
-from data import Corpus, LMDataset
+from data import Corpus, LMDataset, DebugDataset
 
 
 class Aggregator(ABC):
@@ -62,53 +62,31 @@ def run(
     # Load data
     ###############################################################################
 
-    # Starting from sequential data, batchify arranges the dataset into columns.
-    # For instance, with the alphabet as the sequence and batch size 4, we'd get
-    # ┌ a g m s ┐
-    # │ b h n t │
-    # │ c i o u │
-    # │ d j p v │
-    # │ e k q w │
-    # └ f l r x ┘.
-    # These columns are treated as independent by the model, which means that the
-    # dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
-    # batch processing.
-
-    # def batchify(data_source, bsz):
-    #     # Work out how cleanly we can divide the dataset into bsz parts.
-    #     n_batch = data_source.size(0) // bsz
-    #     # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    #     data_source = data_source.narrow(0, 0, n_batch * bsz)
-    #     # Evenly divide the data across the bsz batches.
-    #     data_source = data_source.view(bsz, -1).t().contiguous()
-    #     return data_source.to(device)
-
     debug_dataset = "debug" in str(data)
 
     eval_batch_size = 10
     if debug_dataset:
 
-        def load(fname, bsz):
-            arrays = np.load(str(Path(data, fname))).values()
-            return [batchify(torch.tensor(x, device=device), bsz) for x in arrays]
+        def build_data_loader(fname):
+            arrays = np.load(str(Path(data, fname)))
+            tensors = {k: torch.Tensor(v).long().to(device) for k, v in arrays.items()}
+            return DataLoader(DebugDataset(**tensors, bptt=bptt), batch_size=batch_size)
 
-        train_data = load("train.npz", batch_size)
-        val_data = load("valid.npz", eval_batch_size)
-        test_data = load("test.npz", eval_batch_size)
-        n_tokens = 1 + int(
-            max((max(d.max(), t.max()) for d, t in [train_data, val_data, test_data]))
-        )
+        train_data = build_data_loader("train.npz")
+        val_data = build_data_loader("valid.npz")
+        test_data = build_data_loader("test.npz")
+        n_tokens = 11
     else:
         corpus = Corpus(data)
         train_data = DataLoader(LMDataset(corpus.train, bptt), batch_size=batch_size)
         val_data = DataLoader(LMDataset(corpus.valid, bptt), batch_size=batch_size)
         test_data = DataLoader(LMDataset(corpus.test, bptt), batch_size=batch_size)
 
-        ###############################################################################
-        # Build the model
-        ###############################################################################
-
         n_tokens = len(corpus.dictionary)
+
+    ###############################################################################
+    # Build the model
+    ###############################################################################
 
     recurrent = model not in ["transformer", "ours"]
     if model == "transformer":
@@ -133,9 +111,8 @@ def run(
     ###############################################################################
     # Training code
     ###############################################################################
-    criterion = nn.NLLLoss()
 
-    # Loop over epochs.
+    criterion = nn.NLLLoss()
     best_val_loss = None
 
     def train():
@@ -146,10 +123,10 @@ def run(
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
+            targets = targets.view(-1)
             if not recurrent:
                 output = model(data)
                 output = output.view(-1, n_tokens)
-                targets = targets.flatten()
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
@@ -183,6 +160,7 @@ def run(
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
             for i, (data, targets) in enumerate(data_source):
+                targets = targets.view(-1)
                 if not recurrent:
                     output = model(data)
                     output = output.view(-1, n_tokens)
@@ -209,6 +187,7 @@ def run(
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
+        # Loop over epochs.
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
             means = MeanAggregator()
