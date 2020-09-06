@@ -2,6 +2,8 @@ from io import open
 from pathlib import Path
 
 import torch
+from torch.utils.data import Dataset
+from torch.utils.data.dataset import T_co
 
 
 class Dictionary(object):
@@ -48,3 +50,8 @@ class Corpus(object):
             ids = torch.cat(idss)
 
         return ids
+
+
+class Wikipedia(Dataset):
+    def __getitem__(self, index) -> T_co:
+        pass
