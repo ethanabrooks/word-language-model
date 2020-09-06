@@ -29,6 +29,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--config",
         type=get_config,
+        default=dict(),
         help="config file to use for Experiment",
     )
     parser.add_argument(
@@ -367,14 +368,11 @@ def run(
         # Export the model in ONNX format.
         export_onnx(onnx_export, batch_size=1, seq_len=bptt)
 
-    return dict(test_loss=test_loss)
-
 
 def main(
     config: Optional[dict],
     cpus_per_trial: int,
     data: Path,
-    epochs: int,
     gpus_per_trial: int,
     n_samples: int,
     name: str,
@@ -384,7 +382,7 @@ def main(
         if v is not None:
             config[k] = v
 
-    config.update(epochs=epochs, data=data.absolute())
+    config.update(data=data.absolute())
     local_mode = n_samples is None
     ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
     if local_mode:
@@ -403,7 +401,6 @@ def main(
         name=name,
         config=config,
         resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
-        stop=dict(training_iteration=epochs),
         **kwargs,
     )
 
