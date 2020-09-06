@@ -147,4 +147,5 @@ dependencies:
     - urllib3==1.25.10
     - wcwidth==0.2.5
     - yarl==1.5.1
-prefix: /opt/conda/envs/teacher
+prefix: /home/ethanbro/miniconda3/envs/torch
+

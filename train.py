@@ -1,4 +1,6 @@
 import math
+from abc import ABC
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -6,11 +8,26 @@ import numpy as np
 import torch
 from ray import tune
 from torch import nn as nn
+from torch.utils.data import DataLoader
 
 import models
 import ours
-from aggregators import MeanAggregator
-from data import Corpus
+from data import Corpus, LMDataset
+
+
+class Aggregator(ABC):
+    def __init__(self):
+        self.values = defaultdict(list)
+
+    def update(self, **values):
+        for k, v in values.items():
+            self.values[k].append(v)
+
+
+class MeanAggregator(Aggregator):
+    def items(self):
+        for k, v in self.values.items():
+            yield k, np.mean(v)
 
 
 def run(
@@ -60,14 +77,14 @@ def run(
     # dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
     # batch processing.
 
-    def batchify(data_source, bsz):
-        # Work out how cleanly we can divide the dataset into bsz parts.
-        n_batch = data_source.size(0) // bsz
-        # Trim off any extra elements that wouldn't cleanly fit (remainders).
-        data_source = data_source.narrow(0, 0, n_batch * bsz)
-        # Evenly divide the data across the bsz batches.
-        data_source = data_source.view(bsz, -1).t().contiguous()
-        return data_source.to(device)
+    # def batchify(data_source, bsz):
+    #     # Work out how cleanly we can divide the dataset into bsz parts.
+    #     n_batch = data_source.size(0) // bsz
+    #     # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    #     data_source = data_source.narrow(0, 0, n_batch * bsz)
+    #     # Evenly divide the data across the bsz batches.
+    #     data_source = data_source.view(bsz, -1).t().contiguous()
+    #     return data_source.to(device)
 
     debug_dataset = "debug" in str(data)
 
@@ -86,21 +103,15 @@ def run(
         )
     else:
         corpus = Corpus(data)
-        train_data = batchify(corpus.train, batch_size)  # [104431, 20]
-        val_data = batchify(corpus.valid, eval_batch_size)  # [21764, 10]
-        test_data = batchify(corpus.test, eval_batch_size)  # [24556, 10]
+        train_data = DataLoader(LMDataset(corpus.train, bptt), batch_size=batch_size)
+        val_data = DataLoader(LMDataset(corpus.valid, bptt), batch_size=batch_size)
+        test_data = DataLoader(LMDataset(corpus.test, bptt), batch_size=batch_size)
 
         ###############################################################################
         # Build the model
         ###############################################################################
 
         n_tokens = len(corpus.dictionary)
-
-    def size_data(data):
-        if debug_dataset:
-            return data[0].size(0)
-        else:
-            return data.size(0)
 
     recurrent = model not in ["transformer", "ours"]
     if model == "transformer":
@@ -125,28 +136,6 @@ def run(
     ###############################################################################
     # Training code
     ###############################################################################
-
-    # get_batch subdivides the source data into chunks of length args.bptt.
-    # If source is equal to the example output of the batchify function, with
-    # a bptt-limit of 2, we'd get the following two Variables for i = 0:
-    # ┌ a g m s ┐ ┌ b h n t ┐
-    # └ b h n t ┘ └ c i o u ┘
-    # Note that despite the name of the function, the subdivison of data is not
-    # done along the batch dimension (i.e. dimension 1), since that was handled
-    # by the batchify function. The chunks are along dimension 0, corresponding
-    # to the seq_len dimension in the LSTM.
-
-    def get_batch(source, i):
-        if debug_dataset:
-            data, target = source
-            seq_len = min(bptt, len(data) - 1 - i)
-            return data[i : i + seq_len], target[i : i + seq_len].flatten()
-        else:
-            seq_len = min(bptt, len(source) - 1 - i)
-            data = source[i : i + seq_len]
-            target = source[i + 1 : i + 1 + seq_len].view(-1)
-            return data, target
-
     criterion = nn.NLLLoss()
 
     # Loop over epochs.
@@ -156,14 +145,14 @@ def run(
         # Turn on training mode which enables dropout.
         model.train()
         hidden = model.init_hidden(batch_size) if recurrent else None
-        for batch, i in enumerate(range(0, size_data(train_data) - 1, bptt)):
-            data, targets = get_batch(train_data, i)
+        for batch, (data, targets) in enumerate(train_data):
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
             if not recurrent:
                 output = model(data)
                 output = output.view(-1, n_tokens)
+                targets = targets.flatten()
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
@@ -179,26 +168,14 @@ def run(
                 p.data.add_(p.grad, alpha=-lr)
 
             # TODO: only save a subset of data/output/targets
-            yield dict(epoch=epoch, batch=batch, loss=loss.item(),
-                    accuracy=accuracy.item(),), dict(
+            info = dict(epoch=epoch, batch=batch)
+            mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
+            write_info = dict(
                 data=data[:, 0],
                 output=output.view(*data.shape, -1)[:, 0],
                 targets=targets.view(data.shape)[:, 0],
             )
-            # total_loss += loss.item()
-
-            # if batch % log_interval == 0 and batch > 0:
-            #     cur_loss = total_loss / log_interval
-            #     cur_accuracy = total_accuracy / log_interval
-            #     tune.report(
-            #         epoch=epoch,
-            #         batch=batch,
-            #         loss=cur_loss,
-            #         ppl=math.exp(cur_loss),
-            #         accuracy=float(cur_accuracy),
-            #     )
-            #     total_accuracy = 0
-            #     total_loss = 0
+            yield info, mean_info, write_info
             if dry_run:
                 break
 
@@ -208,8 +185,7 @@ def run(
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
-            for i in range(0, size_data(data_source) - 1, bptt):
-                data, targets = get_batch(data_source, i)
+            for i, (data, targets) in enumerate(data_source):
                 if not recurrent:
                     output = model(data)
                     output = output.view(-1, n_tokens)
@@ -239,12 +215,12 @@ def run(
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
             means = MeanAggregator()
-            for i, (results, info) in enumerate(train()):
-                means.update(**results)
+            for i, (info, mean_info, write_info) in enumerate(train()):
+                means.update(**mean_info)
                 if (i + 1) % log_interval == 0:
-                    tune.report(**dict(means.items()))
+                    tune.report(**info, **dict(means.items()))
                     with tune.checkpoint_dir(epoch) as path:
-                        np.savez(path, info)
+                        np.savez(path, write_info)
 
             val_loss = np.mean(list(evaluate(val_data)))
             tune.report(val_loss=val_loss)
