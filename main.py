@@ -12,6 +12,7 @@ import torch.onnx
 from ray import tune
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
+from config import get_config
 from data import Corpus
 
 import models
@@ -27,7 +28,7 @@ def add_arguments(parser):
     parser.add_argument("--clip", type=float, default=0.25, help="gradient clipping")
     parser.add_argument(
         "--config",
-        type=str,
+        type=get_config,
         help="config file to use for Experiment",
     )
     parser.add_argument(
@@ -379,9 +380,6 @@ def main(
     name: str,
     **kwargs,
 ):
-    if config is None:
-        config = dict()
-
     for k, v in kwargs.items():
         if v is not None:
             config[k] = v
