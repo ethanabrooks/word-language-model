@@ -66,16 +66,25 @@ def run(
 
     eval_batch_size = 10
     if debug_dataset:
-
-        def build_data_loader(fname):
-            arrays = np.load(str(Path(data, fname)))
-            tensors = {k: torch.Tensor(v).long().to(device) for k, v in arrays.items()}
-            return DataLoader(DebugDataset(**tensors, bptt=bptt), batch_size=batch_size)
-
-        train_data = build_data_loader("train.npz")
-        val_data = build_data_loader("valid.npz")
-        test_data = build_data_loader("test.npz")
-        n_tokens = 11
+        if not data.exists():
+            size = 10000
+            n_tokens = 10
+            p = 0.8
+            print(
+                f"Data not found. Generating DebugDataset with size {size}, {n_tokens} tokens, and p={p}"
+            )
+            DebugDataset.generate(data, seed, size=size, n_tokens=n_tokens, p=p)
+        dataset = DebugDataset(data, bptt)
+        size = len(dataset)
+        size_valid = int(size * 0.2)
+        size_test = int(size * 0.1)
+        train_data, val_data, test_data = (
+            DataLoader(ds, batch_size=batch_size)
+            for ds in torch.utils.data.random_split(
+                dataset, [size - size_test - size_valid, size_valid, size_test]
+            )
+        )
+        n_tokens = dataset.n_tokens
     else:
         corpus = Corpus(data)
         train_data = DataLoader(LMDataset(corpus.train, bptt), batch_size=batch_size)
@@ -120,10 +129,11 @@ def run(
         model.train()
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, (data, targets) in enumerate(train_data):
+            data = data.to(device)
+            targets = targets.to(device).view(-1)
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
-            targets = targets.view(-1)
             if not recurrent:
                 output = model(data)
                 output = output.view(-1, n_tokens)

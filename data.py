@@ -4,6 +4,7 @@ import numpy as np
 
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 class Dictionary(object):
@@ -69,27 +70,30 @@ class LMDataset(Dataset):
 
 
 class DebugDataset(Dataset):
-    def __init__(self, data: torch.Tensor, target: torch.Tensor, bptt: int):
+    def __init__(self, path: Path, bptt: int):
+        arrays = np.load(str(path.with_suffix(".npz")))
+        self.target = torch.Tensor(arrays["target"]).long()
+        self.data = torch.Tensor(arrays["data"]).long()
+        self.n_tokens = 1 + torch.Tensor(arrays["mapping"]).size(0)
         self.bptt = bptt
-        self.target = target
-        self.data = data
 
     @staticmethod
-    def generate_targets(data: np.ndarray, p):
-        vocab = 1 + data.max(initial=-np.inf)
-        mapping = np.random.choice(2, (vocab, vocab), p=[p, 1 - p]).astype(bool)
+    def generate_targets(data: np.ndarray, mapping: np.ndarray, n_tokens: int):
         np.fill_diagonal(mapping, 0)
-        prev = [None for _ in range(vocab)]
-        for word in data:
-            yield prev[word] or vocab
-            for w in np.arange(vocab)[mapping[word]]:
+        prev = [None for _ in range(n_tokens)]
+        for word in tqdm(data):
+            yield prev[word] or n_tokens
+            for w in np.arange(n_tokens)[mapping[word]]:
                 prev[w] = word
 
-    def generate(self, path: Path, seed: int, size: int, n_tokens: int, p: float):
+    @classmethod
+    def generate(cls, path: Path, seed: int, size: int, n_tokens: int, p: float):
+        path.parent.mkdir(parents=True, exist_ok=True)
         np.random.seed(seed)
         data = np.random.choice(n_tokens, size)
-        target = list(self.generate_targets(data, p))
-        np.savez(str(path), data=data, target=target)
+        mapping = np.random.choice(2, (n_tokens, n_tokens), p=[p, 1 - p]).astype(bool)
+        target = list(cls.generate_targets(data, mapping, n_tokens))
+        np.savez(str(path), data=data, target=target, mapping=mapping)
 
     def __getitem__(self, index):
         data = self.data[index : index + self.bptt]
