@@ -53,13 +53,10 @@ def run(
 ):
     # Set the random seed manually for reproducibility.
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        if not cuda:
-            print(
-                "WARNING: You have a CUDA device, so you should probably run with --cuda"
-            )
+    cuda = cuda and torch.cuda.is_available()
 
     device = torch.device("cuda" if cuda else "cpu")
+    print("Running with device:", device)
 
     ###############################################################################
     # Load data

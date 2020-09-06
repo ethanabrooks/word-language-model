@@ -13,9 +13,9 @@ from train import run
 
 
 def add_arguments(parser):
-    parser.add_argument("--batch_size", type=int, metavar="N", help="batch size")
+    parser.add_argument("--batch-size", type=int, metavar="N", help="batch size")
     parser.add_argument("--bptt", type=int, help="sequence length")
-    parser.add_argument("--cuda", action="store_true", help="use CUDA")
+    parser.add_argument("--no-cuda", dest='cuda', action="store_false", help="use CUDA")
     parser.add_argument("--clip", type=float, help="gradient clipping")
     parser.add_argument(
         "--config",
