@@ -80,13 +80,20 @@ class DebugDataset(Dataset):
             # print(i, np.arange(self.n_tokens - 1)[row])
         self.bptt = self.data.size(1)
 
+    def print_mapping(self):
+        for i, row in enumerate(self.mapping.T):
+            print(i, np.arange(self.n_tokens - 1)[row])
+
     @staticmethod
     def generate_targets(data: np.ndarray, mapping: np.ndarray, n_tokens: int):
         np.fill_diagonal(mapping, 0)
         for sentence in tqdm(data):
             prev = [None for _ in range(n_tokens)]
             for word in sentence:
-                yield prev[word] or n_tokens
+                target = prev[word]
+                if target is None:
+                    target = n_tokens
+                yield target
                 for w in np.arange(n_tokens)[mapping[word]]:
                     prev[w] = word
 
