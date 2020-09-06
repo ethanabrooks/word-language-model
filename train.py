@@ -179,7 +179,8 @@ def run(
                 p.data.add_(p.grad, alpha=-lr)
 
             # TODO: only save a subset of data/output/targets
-            yield dict(epoch=epoch, batch=batch, loss=loss, accuracy=accuracy,), dict(
+            yield dict(epoch=epoch, batch=batch, loss=loss.item(),
+                    accuracy=accuracy.item(),), dict(
                 data=data[:, 0],
                 output=output.view(*data.shape, -1)[:, 0],
                 targets=targets.view(data.shape)[:, 0],
