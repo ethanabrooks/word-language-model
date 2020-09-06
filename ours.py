@@ -69,7 +69,7 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
         S = k.size(1)
         connections = q @ k.transpose(1, 2)  # (N, L, S)
         # forward_scan = scan_forward(connections)
-        backward_scan = scan_backward(connections)
+        backward_scan = scan_backward(connections.sigmoid())
         # eye = torch.eye(L, S, device=q.device)
         # step_forward = eye.roll(1, -1)
         # step_backward = eye.roll(-1, -1)
