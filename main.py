@@ -367,8 +367,6 @@ def run(
         # Export the model in ONNX format.
         export_onnx(onnx_export, batch_size=1, seq_len=bptt)
 
-    return dict(test_loss=test_loss)
-
 
 def main(
     config: Optional[dict],
