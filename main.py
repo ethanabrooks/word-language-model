@@ -258,6 +258,7 @@ def run(
         # Turn on training mode which enables dropout.
         model.train()
         total_loss = 0.0
+        total_accuracy = 0.0
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, i in enumerate(range(0, size_data(train_data) - 1, bptt)):
             data, targets = get_batch(train_data, i)
@@ -270,6 +271,7 @@ def run(
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
+            total_accuracy += torch.mean((output.max(-1).indices == targets).float())
             loss = criterion(output, targets)
             loss.backward()
 
@@ -282,9 +284,15 @@ def run(
 
             if batch % log_interval == 0 and batch > 0:
                 cur_loss = total_loss / log_interval
+                cur_accuracy = total_accuracy / log_interval
                 tune.report(
-                    epoch=epoch, batch=batch, loss=cur_loss, ppl=math.exp(cur_loss)
+                    epoch=epoch,
+                    batch=batch,
+                    loss=cur_loss,
+                    ppl=math.exp(cur_loss),
+                    cur_accuracy=cur_accuracy,
                 )
+                total_accuracy = 0
                 total_loss = 0
             if dry_run:
                 break
