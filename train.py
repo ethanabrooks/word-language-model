@@ -141,7 +141,6 @@ def run(
             for p in model.parameters():
                 p.data.add_(p.grad, alpha=-lr)
 
-            # TODO: only save a subset of data/output/targets
             info = dict(epoch=epoch, batch=batch)
             mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
             write_info = dict(
@@ -196,7 +195,13 @@ def run(
                 if (i + 1) % log_interval == 0:
                     tune.report(**info, **dict(means.items()))
                     with tune.checkpoint_dir(epoch) as path:
-                        np.savez(path, write_info)
+                        np.savez(
+                            path,
+                            **{
+                                k: v.detach().cpu().numpy()
+                                for k, v in write_info.items()
+                            },
+                        )
 
             val_loss = np.mean(list(evaluate(val_data)))
             tune.report(val_loss=val_loss)
