@@ -102,6 +102,7 @@ def run(
     ###############################################################################
 
     recurrent = model not in ["transformer", "ours"]
+    em_size = (em_size // n_head) * n_head
     if model == "transformer":
         model = models.TransformerModel(
             n_tokens, em_size, n_head, n_hid, n_layers, dropout
@@ -157,9 +158,9 @@ def run(
             info = dict(epoch=epoch, batch=batch)
             mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
             write_info = dict(
-                data=data[ 0],
-                output=output.view(*data.shape, -1)[ 0],
-                targets=targets.view(data.shape)[ 0],
+                data=data[0],
+                output=output.view(*data.shape, -1)[0],
+                targets=targets.view(data.shape)[0],
             )
             yield info, mean_info, write_info
             if dry_run:
