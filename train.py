@@ -36,7 +36,6 @@ def run(
     clip: float,
     cuda: bool,
     data: Path,
-    dropout: float,
     dry_run: bool,
     em_size: int,
     epochs: int,
@@ -44,14 +43,13 @@ def run(
     lr: float,
     model: str,
     n_head: int,
-    n_hid: int,
-    n_layers: int,
     report: callable,
     save: Path,
     seed: int,
     tied: bool,
     load: Optional[Path] = None,
     onnx_export: Optional[Path] = None,
+    **kwargs,
 ):
     # Set the random seed manually for reproducibility.
     torch.manual_seed(seed)
@@ -107,24 +105,13 @@ def run(
 
     if load is None:
         recurrent = model not in ["transformer", "ours"]
+        kwargs.update(n_tokens=n_tokens, em_size=em_size)
         if model == "transformer":
-            model = models.TransformerModel(
-                n_tokens, em_size, n_head, n_hid, n_layers, dropout
-            ).to(device)
+            model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
         elif model == "ours":
-            model = ours.TransformerModel(
-                n_tokens, em_size, n_head, n_hid, n_layers, dropout
-            ).to(device)
+            model = ours.TransformerModel(n_head=n_head, **kwargs).to(device)
         else:
-            model = models.RNNModel(
-                model,
-                n_tokens,
-                em_size,
-                n_hid,
-                n_layers,
-                dropout,
-                tied,
-            ).to(device)
+            model = models.RNNModel(model, tied, **kwargs).to(device)
     else:
         with load.open("rb") as f:
             model = torch.load(f, map_location=device)
