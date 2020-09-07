@@ -77,6 +77,10 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
 
         return backward_scan
 
+    @staticmethod
+    def softmax(attn_output_weights):
+        return attn_output_weights.sigmoid()
+
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):
     def build_multihead_attention(self, d_model, dropout, nhead):

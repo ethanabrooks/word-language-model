@@ -1,7 +1,8 @@
 from typing import Optional
 
 import torch
-from torch.nn.functional import linear, softmax, dropout
+from torch.nn.functional import linear, dropout
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Module, Parameter
 from torch.nn.init import xavier_uniform_, constant_, xavier_normal_
@@ -502,7 +503,7 @@ class MultiheadAttention(Module):
                 bsz * num_heads, tgt_len, src_len
             )
 
-        attn_output_weights = softmax(attn_output_weights, dim=-1)
+        attn_output_weights = self.softmax(attn_output_weights)
         attn_output_weights = dropout(
             attn_output_weights, p=dropout_p, training=training
         )
@@ -522,6 +523,10 @@ class MultiheadAttention(Module):
             return attn_output, attn_output_weights.sum(dim=1) / num_heads
         else:
             return attn_output, None
+
+    @staticmethod
+    def softmax(attn_output_weights):
+        return F.softmax(attn_output_weights, dim=-1)
 
     @staticmethod
     def get_attn_output_weights(k, q):
