@@ -488,7 +488,7 @@ class MultiheadAttention(Module):
 
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(0)
-            attn_output_weights += attn_mask
+            attn_output_weights = self.apply_mask(attn_mask, attn_output_weights)
 
         if key_padding_mask is not None:
             attn_output_weights = attn_output_weights.view(
@@ -502,7 +502,7 @@ class MultiheadAttention(Module):
                 bsz * num_heads, tgt_len, src_len
             )
 
-        attn_output_weights = softmax(attn_output_weights, dim=-1)
+        attn_output_weights = self.softmax(attn_output_weights)
         attn_output_weights = dropout(
             attn_output_weights, p=dropout_p, training=training
         )
@@ -522,6 +522,14 @@ class MultiheadAttention(Module):
             return attn_output, attn_output_weights.sum(dim=1) / num_heads
         else:
             return attn_output, None
+
+    @staticmethod
+    def apply_mask(attn_mask, attn_output_weights):
+        return attn_output_weights + attn_mask
+
+    @staticmethod
+    def softmax(attn_output_weights):
+        return F.softmax(attn_output_weights, dim=-1)
 
     @staticmethod
     def get_attn_output_weights(k, q):

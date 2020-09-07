@@ -46,6 +46,7 @@ def run(
     n_head: int,
     n_hid: int,
     n_layers: int,
+    report: callable,
     save: Path,
     seed: int,
     tied: bool,
@@ -79,7 +80,7 @@ def run(
                 data, seed, n_seq=n_seq, seq_len=seq_len, n_tokens=n_tokens, p=p
             )
         dataset = DebugDataset(data)
-        assert bptt == dataset.bptt, f'set --bptt={dataset.bptt}.'
+        assert bptt == dataset.bptt, f"set --bptt={dataset.bptt}."
         n_seq = len(dataset)
         size_valid = int(n_seq * 0.2)
         size_test = int(n_seq * 0.1)
@@ -217,6 +218,7 @@ def run(
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
+        steps_since_save = 0
         # Loop over epochs.
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
@@ -224,7 +226,7 @@ def run(
             for i, (info, mean_info, write_info) in enumerate(train()):
                 means.update(**mean_info)
                 if (i + 1) % log_interval == 0:
-                    tune.report(**info, **dict(means.items()))
+                    report(**info, **dict(means.items()))
                     with tune.checkpoint_dir(epoch) as path:
                         np.savez(
                             path,
@@ -235,14 +237,16 @@ def run(
                         )
 
             val_loss = np.mean(list(evaluate(val_data)))
-            tune.report(val_loss=val_loss)
+            report(val_loss=val_loss, steps_since_save=steps_since_save)
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
                     torch.save(model, f)
                 best_val_loss = val_loss
+                steps_since_save = 0
             else:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
                 lr /= 4.0
+                steps_since_save += 1
     except KeyboardInterrupt:
         print("-" * 89)
         print("Exiting from training early")
@@ -258,7 +262,7 @@ def run(
 
     # Run on test data.
     test_loss = np.mean(list(evaluate(test_data)))
-    tune.report(test_loss=test_loss, test_ppl=math.exp(test_loss))
+    report(test_loss=test_loss, test_ppl=math.exp(test_loss))
 
     if onnx_export:
         # Export the model in ONNX format.

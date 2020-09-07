@@ -77,33 +77,18 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
 
         return backward_scan
 
+    @staticmethod
+    def softmax(attn_output_weights):
+        return attn_output_weights
+
+    @staticmethod
+    def apply_mask(attn_mask, attn_output_weights):
+        return attn_output_weights * attn_mask.exp()
+
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):
     def build_multihead_attention(self, d_model, dropout, nhead):
         return MultiheadAttention(d_model, nhead, dropout=dropout)
-
-
-class TransformerDecoderLayer(transformer.TransformerDecoderLayer):
-    def build_multihead_attention(self, d_model, dropout, nhead):
-        return MultiheadAttention(d_model, nhead, dropout=dropout)
-
-
-class Transformer(transformer.Transformer):
-    @staticmethod
-    def build_transformer_decoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
-    ):
-        return TransformerDecoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
-        )
-
-    @staticmethod
-    def build_transformer_encoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
-    ):
-        return TransformerEncoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
-        )
 
 
 class TransformerModel(models.TransformerModel):

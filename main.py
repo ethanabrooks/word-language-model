@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 from typing import Optional, List
+from pprint import pprint
 
 import ray
 from hyperopt.pyll import Apply
@@ -54,9 +55,8 @@ def add_arguments(parser):
         default=1,
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
-    parser.add_argument(
-        "--load", type=Path, help="path to load model from"
-    )
+    parser.add_argument("--load", type=Path, help="path to load model from")
+    parser.add_argument("--local-mode", action="store_true")
     parser.add_argument(
         "--log-interval", type=int, default=200, metavar="N", help="report interval"
     )
@@ -96,7 +96,7 @@ def add_arguments(parser):
         type=int,
         dest="seeds",
         default=[],
-        action="append",
+        nargs="*",
         help="random seed",
     )
     parser.add_argument(
@@ -109,6 +109,7 @@ def main(
     cpus_per_trial: int,
     data: Path,
     gpus_per_trial: int,
+    local_mode: bool,
     n_samples: int,
     name: str,
     seeds: List[int],
@@ -126,25 +127,32 @@ def main(
     else:
         seed = tune.grid_search(seeds)
     config.update(seed=seed)
-    local_mode = n_samples is None
-    ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
-    kwargs = dict()
-    if any(isinstance(v, Apply) for v in config.values()):
-        kwargs = dict(
-            search_alg=HyperOptSearch(config, metric="test_loss"),
-            num_samples=n_samples,
+    if n_samples or local_mode:
+        config.update(report=tune.report)
+        ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
+        kwargs = dict()
+        if any(isinstance(v, Apply) for v in config.values()):
+            kwargs = dict(
+                search_alg=HyperOptSearch(config, metric="test_loss"),
+                num_samples=n_samples,
+            )
+
+        def _run(c):
+            run(**c)
+
+        tune.run(
+            _run,
+            name=name,
+            config=config,
+            resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
+            **kwargs,
         )
+    else:
 
-    def _run(c):
-        run(**c)
+        def report(**kwargs):
+            pprint(kwargs)
 
-    tune.run(
-        _run,
-        name=name,
-        config=config,
-        resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
-        **kwargs,
-    )
+        run(**config, report=report)
 
 
 if __name__ == "__main__":
