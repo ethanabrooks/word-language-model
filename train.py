@@ -46,9 +46,10 @@ def run(
     n_head: int,
     n_hid: int,
     n_layers: int,
-    save: str,
+    save: Path,
     seed: int,
     tied: bool,
+    load: Optional[Path] = None,
     onnx_export: Optional[Path] = None,
 ):
     # Set the random seed manually for reproducibility.
@@ -78,7 +79,7 @@ def run(
                 data, seed, n_seq=n_seq, seq_len=seq_len, n_tokens=n_tokens, p=p
             )
         dataset = DebugDataset(data)
-        assert bptt == dataset.bptt
+        assert bptt == dataset.bptt, f'set --bptt={dataset.bptt}.'
         n_seq = len(dataset)
         size_valid = int(n_seq * 0.2)
         size_test = int(n_seq * 0.1)
@@ -101,26 +102,40 @@ def run(
     # Build the model
     ###############################################################################
 
-    recurrent = model not in ["transformer", "ours"]
     em_size = (em_size // n_head) * n_head
-    if model == "transformer":
-        model = models.TransformerModel(
-            n_tokens, em_size, n_head, n_hid, n_layers, dropout
-        ).to(device)
-    elif model == "ours":
-        model = ours.TransformerModel(
-            n_tokens, em_size, n_head, n_hid, n_layers, dropout
-        ).to(device)
+
+    if load is None:
+        recurrent = model not in ["transformer", "ours"]
+        if model == "transformer":
+            model = models.TransformerModel(
+                n_tokens, em_size, n_head, n_hid, n_layers, dropout
+            ).to(device)
+        elif model == "ours":
+            model = ours.TransformerModel(
+                n_tokens, em_size, n_head, n_hid, n_layers, dropout
+            ).to(device)
+        else:
+            model = models.RNNModel(
+                model,
+                n_tokens,
+                em_size,
+                n_hid,
+                n_layers,
+                dropout,
+                tied,
+            ).to(device)
     else:
-        model = models.RNNModel(
-            model,
-            n_tokens,
-            em_size,
-            n_hid,
-            n_layers,
-            dropout,
-            tied,
-        ).to(device)
+        with load.open("rb") as f:
+            model = torch.load(f, map_location=device)
+            # after load the rnn params are not a continuous chunk of memory
+            # this makes them a continuous chunk, and will speed up forward pass
+            # Currently, only rnn model supports flatten_parameters function.
+            recurrent = type(model) not in (
+                models.TransformerModel,
+                ours.TransformerModel,
+            )
+            if recurrent:
+                model.rnn.flatten_parameters()
 
     ###############################################################################
     # Training code
@@ -222,7 +237,7 @@ def run(
             val_loss = np.mean(list(evaluate(val_data)))
             tune.report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
-                with open(save, "wb") as f:
+                with save.open("wb") as f:
                     torch.save(model, f)
                 best_val_loss = val_loss
             else:
@@ -233,7 +248,7 @@ def run(
         print("Exiting from training early")
 
     # Load the best saved model.
-    with open(save, "rb") as f:
+    with save.open("rb") as f:
         model = torch.load(f)
         # after load the rnn params are not a continuous chunk of memory
         # this makes them a continuous chunk, and will speed up forward pass

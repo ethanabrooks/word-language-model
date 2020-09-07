@@ -55,6 +55,9 @@ def add_arguments(parser):
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
     parser.add_argument(
+        "--load", type=Path, help="path to load model from"
+    )
+    parser.add_argument(
         "--log-interval", type=int, default=200, metavar="N", help="report interval"
     )
     parser.add_argument("--lr", type=float, help="initial learning rate")
@@ -86,7 +89,7 @@ def add_arguments(parser):
         help="Number of times to sample from the hyperparameter space. If not set, tune will be run in local mode.",
     )
     parser.add_argument(
-        "--save", type=str, default="model.pt", help="path to save the final model"
+        "--save", type=Path, default="model.pt", help="path to save the final model"
     )
     parser.add_argument(
         "--seed",
