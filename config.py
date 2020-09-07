@@ -9,7 +9,6 @@ def get_config(name):
     if path.exists():
         with path.open() as f:
             config = json.load(f)
-            del config["use_tune"]
             return config
     return configs[name]
 

@@ -40,13 +40,14 @@ def run(
     dry_run: bool,
     em_size: int,
     epochs: int,
+    load: Path,
     log_interval: int,
     lr: float,
     model: str,
     n_head: int,
     n_hid: int,
     n_layers: int,
-    save: str,
+    save: Path,
     seed: int,
     tied: bool,
     onnx_export: Optional[Path] = None,
@@ -101,25 +102,39 @@ def run(
     # Build the model
     ###############################################################################
 
-    recurrent = model not in ["transformer", "ours"]
-    if model == "transformer":
-        model = models.TransformerModel(
-            n_tokens, em_size, n_head, n_hid, n_layers, dropout
-        ).to(device)
-    elif model == "ours":
-        model = ours.TransformerModel(
-            n_tokens, em_size, n_head, n_hid, n_layers, dropout
-        ).to(device)
+    em_size = (em_size // n_head) * n_head
+    if load is None:
+        recurrent = model not in ["transformer", "ours"]
+        if model == "transformer":
+            model = models.TransformerModel(
+                n_tokens, em_size, n_head, n_hid, n_layers, dropout
+            ).to(device)
+        elif model == "ours":
+            model = ours.TransformerModel(
+                n_tokens, em_size, n_head, n_hid, n_layers, dropout
+            ).to(device)
+        else:
+            model = models.RNNModel(
+                model,
+                n_tokens,
+                em_size,
+                n_hid,
+                n_layers,
+                dropout,
+                tied,
+            ).to(device)
     else:
-        model = models.RNNModel(
-            model,
-            n_tokens,
-            em_size,
-            n_hid,
-            n_layers,
-            dropout,
-            tied,
-        ).to(device)
+        with load.open("rb") as f:
+            model = torch.load(f, map_location=device)
+            # after load the rnn params are not a continuous chunk of memory
+            # this makes them a continuous chunk, and will speed up forward pass
+            # Currently, only rnn model supports flatten_parameters function.
+            recurrent = type(model) not in (
+                models.TransformerModel,
+                ours.TransformerModel,
+            )
+            if recurrent:
+                model.rnn.flatten_parameters()
 
     ###############################################################################
     # Training code
@@ -157,9 +172,9 @@ def run(
             info = dict(epoch=epoch, batch=batch)
             mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
             write_info = dict(
-                data=data[ 0],
-                output=output.view(*data.shape, -1)[ 0],
-                targets=targets.view(data.shape)[ 0],
+                data=data[0],
+                output=output.view(*data.shape, -1)[0],
+                targets=targets.view(data.shape)[0],
             )
             yield info, mean_info, write_info
             if dry_run:
@@ -221,7 +236,7 @@ def run(
             val_loss = np.mean(list(evaluate(val_data)))
             tune.report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
-                with open(save, "wb") as f:
+                with save.open("wb") as f:
                     torch.save(model, f)
                 best_val_loss = val_loss
             else:
@@ -232,7 +247,7 @@ def run(
         print("Exiting from training early")
 
     # Load the best saved model.
-    with open(save, "rb") as f:
+    with save.open("rb") as f:
         model = torch.load(f)
         # after load the rnn params are not a continuous chunk of memory
         # this makes them a continuous chunk, and will speed up forward pass
