@@ -398,6 +398,7 @@ class MultiheadAttention(Module):
                         ],
                         dim=1,
                     )
+                    raise NotImplementedError
                 if key_padding_mask is not None:
                     key_padding_mask = torch.cat(
                         [
@@ -410,6 +411,7 @@ class MultiheadAttention(Module):
                         ],
                         dim=1,
                     )
+                    raise NotImplementedError
             else:
                 assert static_k is None, "bias cannot be added to static key."
                 assert static_v is None, "bias cannot be added to static value."
@@ -471,6 +473,7 @@ class MultiheadAttention(Module):
                     ],
                     dim=1,
                 )
+                raise NotImplementedError
             if key_padding_mask is not None:
                 key_padding_mask = torch.cat(
                     [
@@ -483,13 +486,14 @@ class MultiheadAttention(Module):
                     ],
                     dim=1,
                 )
+                raise NotImplementedError
 
         attn_output_weights = self.get_attn_output_weights(k, q)
         assert list(attn_output_weights.size()) == [bsz * num_heads, tgt_len, src_len]
 
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(0)
-            attn_output_weights += attn_mask
+            attn_output_weights = self.apply_mask(attn_mask, attn_output_weights)
 
         if key_padding_mask is not None:
             attn_output_weights = attn_output_weights.view(
@@ -523,6 +527,10 @@ class MultiheadAttention(Module):
             return attn_output, attn_output_weights.sum(dim=1) / num_heads
         else:
             return attn_output, None
+
+    @staticmethod
+    def apply_mask(attn_mask, attn_output_weights):
+        return attn_output_weights + attn_mask
 
     @staticmethod
     def softmax(attn_output_weights):

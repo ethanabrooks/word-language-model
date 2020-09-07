@@ -81,33 +81,14 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
     def softmax(attn_output_weights):
         return attn_output_weights.sigmoid()
 
+    @staticmethod
+    def apply_mask(attn_mask, attn_output_weights):
+        return attn_output_weights * attn_mask
+
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):
     def build_multihead_attention(self, d_model, dropout, nhead):
         return MultiheadAttention(d_model, nhead, dropout=dropout)
-
-
-class TransformerDecoderLayer(transformer.TransformerDecoderLayer):
-    def build_multihead_attention(self, d_model, dropout, nhead):
-        return MultiheadAttention(d_model, nhead, dropout=dropout)
-
-
-class Transformer(transformer.Transformer):
-    @staticmethod
-    def build_transformer_decoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
-    ):
-        return TransformerDecoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
-        )
-
-    @staticmethod
-    def build_transformer_encoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
-    ):
-        return TransformerEncoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
-        )
 
 
 class TransformerModel(models.TransformerModel):
@@ -117,3 +98,9 @@ class TransformerModel(models.TransformerModel):
 
     def encode_pos(self, src):
         return src
+
+    def _generate_square_subsequent_mask(self, sz):
+        r"""Generate a square mask for the sequence. The masked positions are filled with float(0.0).
+        Unmasked positions are filled with float(1.0).
+        """
+        return (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1).float()
