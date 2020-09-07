@@ -40,7 +40,6 @@ def run(
     dry_run: bool,
     em_size: int,
     epochs: int,
-    load: Path,
     log_interval: int,
     lr: float,
     model: str,
@@ -50,6 +49,7 @@ def run(
     save: Path,
     seed: int,
     tied: bool,
+    load: Optional[Path] = None,
     onnx_export: Optional[Path] = None,
 ):
     # Set the random seed manually for reproducibility.
@@ -79,7 +79,7 @@ def run(
                 data, seed, n_seq=n_seq, seq_len=seq_len, n_tokens=n_tokens, p=p
             )
         dataset = DebugDataset(data)
-        assert bptt == dataset.bptt
+        assert bptt == dataset.bptt, f'set --bptt={dataset.bptt}.'
         n_seq = len(dataset)
         size_valid = int(n_seq * 0.2)
         size_test = int(n_seq * 0.1)
@@ -103,6 +103,7 @@ def run(
     ###############################################################################
 
     em_size = (em_size // n_head) * n_head
+
     if load is None:
         recurrent = model not in ["transformer", "ours"]
         if model == "transformer":
@@ -125,7 +126,7 @@ def run(
             ).to(device)
     else:
         with load.open("rb") as f:
-            model = torch.load(f)
+            model = torch.load(f, map_location=device)
             # after load the rnn params are not a continuous chunk of memory
             # this makes them a continuous chunk, and will speed up forward pass
             # Currently, only rnn model supports flatten_parameters function.
