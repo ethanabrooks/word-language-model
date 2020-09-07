@@ -59,14 +59,13 @@ class LMDataset(Dataset):
         self.tokens = tokens
 
     def __getitem__(self, index):
-        seq_len = min(self.bptt, len(self.tokens) - 1 - index)
         return (
-            self.tokens[index : index + seq_len],
-            self.tokens[index + 1 : index + seq_len + 1],
+            self.tokens[index : index + self.bptt],
+            self.tokens[index + 1 : index + self.bptt + 1],
         )
 
     def __len__(self):
-        return len(self.tokens)
+        return len(self.tokens) - self.bptt
 
 
 class DebugDataset(Dataset):
