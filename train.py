@@ -217,6 +217,7 @@ def run(
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
+        steps_since_save = 0
         # Loop over epochs.
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
@@ -235,14 +236,16 @@ def run(
                         )
 
             val_loss = np.mean(list(evaluate(val_data)))
-            tune.report(val_loss=val_loss)
+            tune.report(val_loss=val_loss, steps_since_save=steps_since_save)
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
                     torch.save(model, f)
                 best_val_loss = val_loss
+                steps_since_save = 0
             else:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
                 lr /= 4.0
+                steps_since_save += 1
     except KeyboardInterrupt:
         print("-" * 89)
         print("Exiting from training early")
