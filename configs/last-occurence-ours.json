@@ -1,0 +1,20 @@
+{
+  "batch_size": 20,
+  "bptt": 35,
+  "clip": 0.25,
+  "cuda": true,
+  "data": "/data/debug.npz",
+  "dropout": 0.1,
+  "dry_run": false,
+  "em_size": 250,
+  "epochs": 20,
+  "log_interval": 1,
+  "lr": 10,
+  "model": "ours",
+  "n_head": 1,
+  "n_hid": 250,
+  "n_layers": 3,
+  "save": "model.pt",
+  "seed": 1111,
+  "tied": false
+}
