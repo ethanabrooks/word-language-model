@@ -1,13 +1,9 @@
-from typing import Optional, Tuple
-
 import torch
-from torch.nn import Parameter, Linear
-from torch.nn.init import xavier_uniform_
+from torch import Tensor
 
 import models
 import multihead_attention
 import transformer
-from torch import Tensor
 
 
 def with_last_col_1(x: Tensor, last1=None):
