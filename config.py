@@ -25,11 +25,11 @@ default = dict(
 )
 
 search = dict(
-    batch_size=hp.choice("batch_size", [10, 20, 30]),
+    batch_size=hp.choice("batch_size", [5, 10, 20, 30]),
     bptt=hp.choice("bptt", [25, 35, 45]),
     clip=hp.choice("clip", [0.2, 0.25, 0.3]),
-    dropout=hp.choice("dropout", [0.1, 0.2]),
-    em_size=hp.choice("em_size", [100, 200, 250, 300]),
+    dropout=hp.choice("dropout", [0.05, 0.1, 0.2]),
+    em_size=hp.choice("em_size", [50, 100, 200, 250, 300]),
     lr=hp.choice("lr", [5, 10, 20, 30]),
     n_head=hp.choice("n_head", [1, 2, 3, 4, 5, 6]),
     n_hid=hp.choice("n_hid", [100, 200, 250, 300]),
