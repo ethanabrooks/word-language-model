@@ -40,4 +40,4 @@ search = dict(
     n_layers=hp.choice("n_layers", [1, 2, 3, 4]),
 )
 
-configs = dict(search=search)
+configs = dict(search=search, default=default)

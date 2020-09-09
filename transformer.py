@@ -355,7 +355,7 @@ class TransformerEncoderLayer(Module):
 
     @staticmethod
     def build_multihead_attention(d_model, dropout, nhead, **kwargs):
-        return MultiheadAttention(d_model, nhead, dropout=dropout, **kwargs)
+        return MultiheadAttention(d_model, nhead, dropout=dropout)
 
     def __setstate__(self, state):
         if "activation" not in state:

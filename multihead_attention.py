@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 from torch.nn.functional import linear, softmax, dropout
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Module, Parameter
 from torch.nn.init import xavier_uniform_, constant_, xavier_normal_
@@ -495,8 +496,7 @@ class MultiheadAttention(Module):
                 bsz, num_heads, tgt_len, src_len
             )
             attn_output_weights = attn_output_weights.masked_fill(
-                key_padding_mask.unsqueeze(1).unsqueeze(2),
-                float("-inf"),
+                key_padding_mask.unsqueeze(1).unsqueeze(2), float("-inf"),
             )
             attn_output_weights = attn_output_weights.view(
                 bsz * num_heads, tgt_len, src_len
