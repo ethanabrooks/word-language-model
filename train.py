@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 import models
 import ours
-from data import Corpus, LMDataset
+from data import Corpus, LMDataset, DebugDataset
 
 
 class Aggregator(ABC):
@@ -46,6 +46,7 @@ def run(
     n_head: int,
     n_hid: int,
     n_layers: int,
+    report: callable,
     save: str,
     seed: int,
     tied: bool,
@@ -249,14 +250,14 @@ def run(
             for i, (to_log, to_mean, to_write) in enumerate(train()):
                 means.update(**to_mean)
                 if (i + 1) % log_interval == 0:
-                    tune.report(**to_log)
-                    tune.report(**dict(means.items()))
+                    report(**to_log)
+                    report(**dict(means.items()))
                     with tune.checkpoint_dir(epoch) as path:
                         np.savez(path, to_write)
                     means = MeanAggregator()
 
             val_loss = np.mean(list(evaluate(val_data)))
-            tune.report(val_loss=val_loss)
+            report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
                 with open(save, "wb") as f:
                     torch.save(model, f)
@@ -279,7 +280,7 @@ def run(
 
     # Run on test data.
     test_loss = np.mean(list(evaluate(test_data)))
-    tune.report(test_loss=test_loss, test_ppl=math.exp(test_loss))
+    report(test_loss=test_loss, test_ppl=math.exp(test_loss))
 
     if onnx_export:
         # Export the model in ONNX format.

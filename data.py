@@ -1,8 +1,10 @@
 from io import open
 from pathlib import Path
+import numpy as np
 
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 class Dictionary(object):

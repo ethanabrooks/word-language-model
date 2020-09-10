@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-conda activate teacher
+conda activate torch
 export CONTAINER_VOLUME="/root/ray_results"
 export RUN_KILL_LABEL="RUN"
 export RUN_DB_PATH="$HOME/runs/torch"

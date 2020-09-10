@@ -1,9 +1,11 @@
 # coding: utf-8
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
+from pprint import pprint
 
 import ray
+from hyperopt.pyll import Apply
 from ray import tune
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
@@ -13,7 +15,7 @@ from train import run
 
 
 def add_arguments(parser):
-    parser.add_argument("--batch_size", type=int, metavar="N", help="batch size")
+    parser.add_argument("--batch-size", type=int, metavar="N", help="batch size")
     parser.add_argument("--bptt", type=int, help="sequence length")
     parser.add_argument("--cuda", action="store_true", help="use CUDA")
     parser.add_argument("--clip", type=float, help="gradient clipping")
@@ -42,7 +44,9 @@ def add_arguments(parser):
         help="dropout applied to layers (0 = no dropout)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true", help="verify the code and the model"
+        "--dry-run",
+        action="store_true",
+        help="verify the code and the model",
     )
     parser.add_argument("--em-size", type=int, help="size of word embeddings")
     parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
@@ -53,6 +57,7 @@ def add_arguments(parser):
         default=1,
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
+    parser.add_argument("--local-mode", action="store_true")
     parser.add_argument(
         "--log-interval", type=int, default=200, metavar="N", help="report interval"
     )
@@ -85,9 +90,16 @@ def add_arguments(parser):
         help="Number of times to sample from the hyperparameter space. If not set, tune will be run in local mode.",
     )
     parser.add_argument(
-        "--save", type=str, default="model.pt", help="path to save the final model"
+        "--save", type=Path, default="model.pt", help="path to save the final model"
     )
-    parser.add_argument("--seed", type=int, default=1111, help="random seed")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        dest="seeds",
+        default=[],
+        nargs="*",
+        help="random seed",
+    )
     parser.add_argument(
         "--tied", action="store_true", help="tie the word embedding and softmax weights"
     )
@@ -98,8 +110,10 @@ def main(
     cpus_per_trial: int,
     data: Path,
     gpus_per_trial: int,
+    local_mode: bool,
     n_samples: int,
     name: str,
+    seeds: List[int],
     **kwargs,
 ):
     for k, v in kwargs.items():
@@ -107,26 +121,40 @@ def main(
             config[k] = v
 
     config.update(data=data.absolute())
-    local_mode = n_samples is None
-    ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
-    if local_mode:
-        kwargs = dict()
+    if len(seeds) == 0:
+        seed = 0
+    elif len(seeds) == 1:
+        seed = seeds[0]
     else:
-        kwargs = dict(
-            search_alg=HyperOptSearch(config, metric="test_loss"),
-            num_samples=n_samples,
+        seed = tune.grid_search(seeds)
+    config.update(seed=seed)
+    if n_samples or local_mode:
+        config.update(report=tune.report)
+        ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
+        kwargs = dict()
+        if any(isinstance(v, Apply) for v in config.values()):
+            kwargs = dict(
+                search_alg=HyperOptSearch(config, metric="test_loss"),
+                num_samples=n_samples,
+            )
+
+        def _run(c):
+            run(**c)
+
+        tune.run(
+            _run,
+            name=name,
+            config=config,
+            resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
+            **kwargs,
         )
+    else:
 
-    def _run(c):
-        run(**c)
+        def report(**kwargs):
+            pprint(kwargs)
 
-    tune.run(
-        _run,
-        name=name,
-        config=config,
-        resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
-        **kwargs,
-    )
+        config.update(report=report)
+        run(**config)
 
 
 if __name__ == "__main__":
