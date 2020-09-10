@@ -64,7 +64,7 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
             q @ self.connect_proj_weight.T @ k.transpose(1, 2)
         )  # (N, L, S)
         scan_forward = scan_in_time(forward_connections)
-        scan_backward = scan_in_time(backward_connections)
+        scan_backward = scan_in_time(backward_connections.flip(-1)).flip(-1)
         eye = torch.eye(L, S, device=q.device)
         step_forward = eye.roll(1, -1)
         step_backward = eye.roll(-1, -1)
@@ -74,7 +74,7 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
         step_backward[0, 0] = 1
         # softmax = self.linear(q).softmax(-1)
 
-        return scan_forward
+        return scan_backward
 
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):

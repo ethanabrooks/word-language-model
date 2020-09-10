@@ -1,6 +1,6 @@
 # coding: utf-8
 import argparse
-import time
+import numpy as np
 import math
 from pathlib import Path
 from typing import Optional
@@ -171,17 +171,39 @@ def run(
         data_source = data_source.view(bsz, -1).t().contiguous()
         return data_source.to(device)
 
-    corpus = Corpus(data)
+    debug_dataset = "debug" in str(data)
+
     eval_batch_size = 10
-    train_data = batchify(corpus.train, batch_size)
-    val_data = batchify(corpus.valid, eval_batch_size)
-    test_data = batchify(corpus.test, eval_batch_size)
+    if debug_dataset:
 
-    ###############################################################################
-    # Build the model
-    ###############################################################################
+        def load(fname, bsz):
+            arrays = np.load(str(Path(data, fname))).values()
+            return [batchify(torch.tensor(x, device=device), bsz) for x in arrays]
 
-    n_tokens = len(corpus.dictionary)
+        train_data = load("train.npz", batch_size)
+        val_data = load("valid.npz", eval_batch_size)
+        test_data = load("test.npz", eval_batch_size)
+        n_tokens = 1 + int(
+            max((max(d.max(), t.max()) for d, t in [train_data, val_data, test_data]))
+        )
+    else:
+        corpus = Corpus(data)
+        train_data = batchify(corpus.train, batch_size)  # [104431, 20]
+        val_data = batchify(corpus.valid, eval_batch_size)  # [21764, 10]
+        test_data = batchify(corpus.test, eval_batch_size)  # [24556, 10]
+
+        ###############################################################################
+        # Build the model
+        ###############################################################################
+
+        n_tokens = len(corpus.dictionary)
+
+    def size_data(data):
+        if debug_dataset:
+            return data[0].size(0)
+        else:
+            return data.size(0)
+
     recurrent = model not in ["transformer", "ours"]
     if model == "transformer":
         model = models.TransformerModel(
@@ -217,10 +239,15 @@ def run(
     # to the seq_len dimension in the LSTM.
 
     def get_batch(source, i):
-        seq_len = min(bptt, len(source) - 1 - i)
-        data = source[i : i + seq_len]
-        target = source[i + 1 : i + 1 + seq_len].view(-1)
-        return data, target
+        if debug_dataset:
+            data, target = source
+            seq_len = min(bptt, len(data) - 1 - i)
+            return data[i : i + seq_len], target[i : i + seq_len].flatten()
+        else:
+            seq_len = min(bptt, len(source) - 1 - i)
+            data = source[i : i + seq_len]
+            target = source[i + 1 : i + 1 + seq_len].view(-1)
+            return data, target
 
     criterion = nn.NLLLoss()
 
@@ -231,20 +258,20 @@ def run(
         # Turn on training mode which enables dropout.
         model.train()
         total_loss = 0.0
-        start_time = time.time()
-        ntokens = len(corpus.dictionary)
+        total_accuracy = 0.0
         hidden = model.init_hidden(batch_size) if recurrent else None
-        for batch, i in enumerate(range(0, train_data.size(0) - 1, bptt)):
+        for batch, i in enumerate(range(0, size_data(train_data) - 1, bptt)):
             data, targets = get_batch(train_data, i)
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
             if not recurrent:
                 output = model(data)
-                output = output.view(-1, ntokens)
+                output = output.view(-1, n_tokens)
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
+            total_accuracy += torch.mean((output.max(-1).indices == targets).float())
             loss = criterion(output, targets)
             loss.backward()
 
@@ -257,9 +284,15 @@ def run(
 
             if batch % log_interval == 0 and batch > 0:
                 cur_loss = total_loss / log_interval
+                cur_accuracy = total_accuracy / log_interval
                 tune.report(
-                    epoch=epoch, batch=batch, loss=cur_loss, ppl=math.exp(cur_loss)
+                    epoch=epoch,
+                    batch=batch,
+                    loss=cur_loss,
+                    ppl=math.exp(cur_loss),
+                    cur_accuracy=cur_accuracy,
                 )
+                total_accuracy = 0
                 total_loss = 0
             if dry_run:
                 break
@@ -271,7 +304,7 @@ def run(
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
-            for i in range(0, data_source.size(0) - 1, bptt):
+            for i in range(0, size_data(data_source) - 1, bptt):
                 data, targets = get_batch(data_source, i)
                 if not recurrent:
                     output = model(data)
@@ -358,7 +391,7 @@ def main(
         kwargs = dict()
     else:
         kwargs = dict(
-            search_alg=HyperOptSearch(config, metric="val_loss"),
+            search_alg=HyperOptSearch(config, metric="test_loss"),
             num_samples=n_samples,
         )
 
