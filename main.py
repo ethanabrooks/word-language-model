@@ -12,6 +12,7 @@ import torch.onnx
 from ray import tune
 from ray.tune.suggest.hyperopt import HyperOptSearch
 
+from config import get_config, default
 from data import Corpus
 
 import models
@@ -19,15 +20,14 @@ import ours
 
 
 def add_arguments(parser):
-    parser.add_argument(
-        "--batch_size", type=int, default=20, metavar="N", help="batch size"
-    )
-    parser.add_argument("--bptt", type=int, default=35, help="sequence length")
+    parser.add_argument("--batch_size", type=int, metavar="N", help="batch size")
+    parser.add_argument("--bptt", type=int, help="sequence length")
     parser.add_argument("--cuda", action="store_true", help="use CUDA")
-    parser.add_argument("--clip", type=float, default=0.25, help="gradient clipping")
+    parser.add_argument("--clip", type=float, help="gradient clipping")
     parser.add_argument(
         "--config",
-        type=str,
+        type=get_config,
+        default=default,
         help="config file to use for Experiment",
     )
     parser.add_argument(
@@ -46,15 +46,12 @@ def add_arguments(parser):
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.2,
         help="dropout applied to layers (0 = no dropout)",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="verify the code and the model"
     )
-    parser.add_argument(
-        "--em-size", type=int, default=200, help="size of word embeddings"
-    )
+    parser.add_argument("--em-size", type=int, help="size of word embeddings")
     parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
     parser.add_argument(
         "--gpus-per-trial",
@@ -66,7 +63,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--log-interval", type=int, default=200, metavar="N", help="report interval"
     )
-    parser.add_argument("--lr", type=float, default=20, help="initial learning rate")
+    parser.add_argument("--lr", type=float, help="initial learning rate")
     parser.add_argument(
         "--onnx-export",
         type=Path,
@@ -85,13 +82,10 @@ def add_arguments(parser):
     parser.add_argument(
         "--n-head",
         type=int,
-        default=2,
         help="the number of heads in the encoder/decoder of the transformer model",
     )
-    parser.add_argument(
-        "--n-hid", type=int, default=200, help="number of hidden units per layer"
-    )
-    parser.add_argument("--n-layers", type=int, default=2, help="number of layers")
+    parser.add_argument("--n-hid", type=int, help="number of hidden units per layer")
+    parser.add_argument("--n-layers", type=int, help="number of layers")
     parser.add_argument(
         "--n-samples",
         type=int,
@@ -290,7 +284,7 @@ def run(
                     batch=batch,
                     loss=cur_loss,
                     ppl=math.exp(cur_loss),
-                    cur_accuracy=cur_accuracy,
+                    accuracy=float(cur_accuracy),
                 )
                 total_accuracy = 0
                 total_loss = 0
@@ -371,20 +365,16 @@ def main(
     config: Optional[dict],
     cpus_per_trial: int,
     data: Path,
-    epochs: int,
     gpus_per_trial: int,
     n_samples: int,
     name: str,
     **kwargs,
 ):
-    if config is None:
-        config = dict()
-
     for k, v in kwargs.items():
         if v is not None:
             config[k] = v
 
-    config.update(epochs=epochs, data=data.absolute())
+    config.update(data=data.absolute())
     local_mode = n_samples is None
     ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)
     if local_mode:
@@ -403,7 +393,6 @@ def main(
         name=name,
         config=config,
         resources_per_trial=dict(gpu=gpus_per_trial, cpu=cpus_per_trial),
-        stop=dict(training_iteration=epochs),
         **kwargs,
     )
 
