@@ -66,17 +66,13 @@ def run(
 
     eval_batch_size = 10
     if debug_dataset:
-
-        def load(fname, bsz):
-            arrays = np.load(str(Path(data, fname))).values()
-            raise NotImplementedError
-            # return [batchify(torch.tensor(x, device=device), bsz) for x in arrays]
-
-        train_data = load("train.npz", batch_size)
-        val_data = load("valid.npz", eval_batch_size)
-        test_data = load("test.npz", eval_batch_size)
-        n_tokens = 1 + int(
-            max((max(d.max(), t.max()) for d, t in [train_data, val_data, test_data]))
+        dataset = DebugDataset(data, device)
+        n_tokens = dataset.n_tokens
+        n_seq = len(dataset)
+        size_valid = int(n_seq * 0.2)
+        size_test = int(n_seq * 0.1)
+        train_data, val_data, test_data = torch.utils.data.random_split(
+            dataset, [n_seq - size_test - size_valid, size_valid, size_test]
         )
     else:
         corpus = Corpus(data)
