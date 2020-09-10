@@ -50,6 +50,7 @@ def add_arguments(parser):
     )
     parser.add_argument("--em-size", type=int, help="size of word embeddings")
     parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
+    parser.add_argument("--forward-scan", type=bool)
     parser.add_argument(
         "--gpus-per-trial",
         "-g",
@@ -57,6 +58,7 @@ def add_arguments(parser):
         default=1,
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
+    parser.add_argument("--last-col-1", type=bool)
     parser.add_argument("--load", type=Path, help="path to load model from")
     parser.add_argument("--local-mode", action="store_true")
     parser.add_argument(

@@ -37,6 +37,7 @@ def run(
     cuda: bool,
     data: Path,
     dry_run: bool,
+    em_size: int,
     epochs: int,
     log_interval: int,
     lr: float,
@@ -79,6 +80,7 @@ def run(
         )
     else:
         corpus = Corpus(data)
+        n_tokens = len(corpus.dictionary)
         train_data = LMDataset(
             corpus.train, bptt, batch_size=batch_size, device=device
         )  # [104431, 20]
@@ -97,11 +99,11 @@ def run(
     # Build the model
     ###############################################################################
 
-    n_tokens = len(corpus.dictionary)
+    em_size = (em_size // n_head) * n_head
 
     if load is None:
         recurrent = model not in ["transformer", "ours"]
-        kwargs.update(n_tokens=n_tokens)
+        kwargs.update(n_tokens=n_tokens, em_size=em_size)
         if model == "transformer":
             model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
         elif model == "ours":
