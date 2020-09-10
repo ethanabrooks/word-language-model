@@ -27,7 +27,7 @@ class Corpus(object):
         self.valid = self.tokenize(Path(path, "valid.txt"))
         self.test = self.tokenize(Path(path, "test.txt"))
 
-    def tokenize(self, path: Path):
+    def tokenize(self, path: Path) -> torch.Tensor:
         """Tokenizes a text file."""
         assert path.exists(), f"{path} does not exist"
         # Add words to the dictionary
@@ -51,6 +51,33 @@ class Corpus(object):
         return ids
 
 
-class Wikipedia(Dataset):
+class LMDataset(Dataset):
+    def __init__(self, tokens: torch.Tensor, bptt: int):
+        self.bptt = bptt
+        self.tokens = tokens
+
     def __getitem__(self, index):
-        pass
+        seq_len = min(self.bptt, len(self.tokens) - 1 - index)
+        return (
+            self.tokens[index : index + seq_len],
+            self.tokens[index + 1 : index + seq_len + 1],
+        )
+
+    def __len__(self):
+        return len(self.tokens)
+
+
+class DebugDataset(Dataset):
+    def __init__(self, data: torch.Tensor, target: torch.Tensor):
+        self.target = target
+        self.data = data
+
+    def __getitem__(self, index):
+        seq_len = min(self.bptt, len(self.tokens) - 1 - index)
+        return (
+            self.tokens[index : index + seq_len],
+            self.tokens[index + 1 : index + seq_len + 1],
+        )
+
+    def __len__(self):
+        return len(self.tokens)

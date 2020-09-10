@@ -1,4 +1,6 @@
 import math
+from abc import ABC
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -6,11 +8,26 @@ import numpy as np
 import torch
 from ray import tune
 from torch import nn as nn
+from torch.utils.data import DataLoader
 
 import models
 import ours
-from aggregators import MeanAggregator
-from data import Corpus
+from data import Corpus, LMDataset
+
+
+class Aggregator(ABC):
+    def __init__(self):
+        self.values = defaultdict(list)
+
+    def update(self, **values):
+        for k, v in values.items():
+            self.values[k].append(v)
+
+
+class MeanAggregator(Aggregator):
+    def items(self):
+        for k, v in self.values.items():
+            yield k, np.mean(v)
 
 
 def run(
@@ -179,28 +196,14 @@ def run(
                 p.data.add_(p.grad, alpha=-lr)
 
             # TODO: only save a subset of data/output/targets
-            yield dict(epoch=epoch, batch=batch), dict(
-                loss=loss.item(),
-                accuracy=accuracy.item(),
-            ), dict(
+            info = dict(epoch=epoch, batch=batch)
+            mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
+            write_info = dict(
                 data=data[:, 0],
                 output=output.view(*data.shape, -1)[:, 0],
                 targets=targets.view(data.shape)[:, 0],
             )
-            # total_loss += loss.item()
-
-            # if batch % log_interval == 0 and batch > 0:
-            #     cur_loss = total_loss / log_interval
-            #     cur_accuracy = total_accuracy / log_interval
-            #     tune.report(
-            #         epoch=epoch,
-            #         batch=batch,
-            #         loss=cur_loss,
-            #         ppl=math.exp(cur_loss),
-            #         accuracy=float(cur_accuracy),
-            #     )
-            #     total_accuracy = 0
-            #     total_loss = 0
+            yield info, mean_info, write_info
             if dry_run:
                 break
 
