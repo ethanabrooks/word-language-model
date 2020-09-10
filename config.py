@@ -5,7 +5,7 @@ from hyperopt import hp
 
 
 def get_config(name):
-    path = Path("configs", name).with_suffix(".json")
+    path = Path(name)
     if path.exists():
         with path.open() as f:
             return json.load(f)

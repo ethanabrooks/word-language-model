@@ -97,25 +97,20 @@ def run(
 
     em_size = (em_size // n_head) * n_head
 
-    if load is None:
-        recurrent = model not in ["transformer", "ours"]
-        kwargs.update(n_tokens=n_tokens, em_size=em_size)
-        if model == "transformer":
-            model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
-        elif model == "ours":
-            model = ours.TransformerModel(n_head=n_head, **kwargs).to(device)
-        else:
-            model = models.RNNModel(model, tied, **kwargs).to(device)
+    recurrent = model not in ["transformer", "ours"]
+    kwargs.update(n_tokens=n_tokens, em_size=em_size)
+    if model == "transformer":
+        model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
+    elif model == "ours":
+        model = ours.TransformerModel(n_head=n_head, **kwargs).to(device)
     else:
+        model = models.RNNModel(model, tied, **kwargs).to(device)
+    if load is not None:
         with load.open("rb") as f:
-            model = torch.load(f, map_location=device)
+            model.load_state_dict(torch.load(f))
             # after load the rnn params are not a continuous chunk of memory
             # this makes them a continuous chunk, and will speed up forward pass
             # Currently, only rnn model supports flatten_parameters function.
-            recurrent = type(model) not in (
-                models.TransformerModel,
-                ours.TransformerModel,
-            )
             if recurrent:
                 model.rnn.flatten_parameters()
 
@@ -220,7 +215,7 @@ def run(
             report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
-                    torch.save(model, f)
+                    torch.save(model.state_dict(), f)
                 best_val_loss = val_loss
             else:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
@@ -231,7 +226,7 @@ def run(
 
     # Load the best saved model.
     with save.open("rb") as f:
-        model = torch.load(f)
+        model.load_state_dict(torch.load(f))
         # after load the rnn params are not a continuous chunk of memory
         # this makes them a continuous chunk, and will speed up forward pass
         # Currently, only rnn model supports flatten_parameters function.
