@@ -9,6 +9,7 @@ from torch import nn as nn
 
 import models
 import ours
+from aggregators import MeanAggregator
 from data import Corpus
 
 
@@ -154,8 +155,6 @@ def run(
     def train():
         # Turn on training mode which enables dropout.
         model.train()
-        total_loss = 0.0
-        total_accuracy = 0.0
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, i in enumerate(range(0, size_data(train_data) - 1, bptt)):
             data, targets = get_batch(train_data, i)
@@ -168,7 +167,9 @@ def run(
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
-            total_accuracy += torch.mean((output.max(-1).indices == targets).float())
+            is_accurate = output.max(-1).indices == targets
+            assert isinstance(is_accurate, torch.Tensor)
+            accuracy = torch.mean(is_accurate.float())
             loss = criterion(output, targets)
             loss.backward()
 
@@ -177,27 +178,35 @@ def run(
             for p in model.parameters():
                 p.data.add_(p.grad, alpha=-lr)
 
-            total_loss += loss.item()
+            # TODO: only save a subset of data/output/targets
+            yield dict(epoch=epoch, batch=batch), dict(
+                loss=loss.item(),
+                accuracy=accuracy.item(),
+            ), dict(
+                data=data[:, 0],
+                output=output.view(*data.shape, -1)[:, 0],
+                targets=targets.view(data.shape)[:, 0],
+            )
+            # total_loss += loss.item()
 
-            if batch % log_interval == 0 and batch > 0:
-                cur_loss = total_loss / log_interval
-                cur_accuracy = total_accuracy / log_interval
-                tune.report(
-                    epoch=epoch,
-                    batch=batch,
-                    loss=cur_loss,
-                    ppl=math.exp(cur_loss),
-                    accuracy=float(cur_accuracy),
-                )
-                total_accuracy = 0
-                total_loss = 0
+            # if batch % log_interval == 0 and batch > 0:
+            #     cur_loss = total_loss / log_interval
+            #     cur_accuracy = total_accuracy / log_interval
+            #     tune.report(
+            #         epoch=epoch,
+            #         batch=batch,
+            #         loss=cur_loss,
+            #         ppl=math.exp(cur_loss),
+            #         accuracy=float(cur_accuracy),
+            #     )
+            #     total_accuracy = 0
+            #     total_loss = 0
             if dry_run:
                 break
 
     def evaluate(data_source):
         # Turn on evaluation mode which disables dropout.
         model.eval()
-        total_loss = 0.0
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
@@ -209,8 +218,7 @@ def run(
                 else:
                     output, hidden = model(data, hidden)
                     hidden = repackage_hidden(hidden)
-                total_loss += len(data) * criterion(output, targets).item()
-        return total_loss / (len(data_source) - 1)
+                yield len(data) * criterion(output, targets).item()
 
     def export_onnx(path, batch_size, seq_len):
         print(
@@ -232,8 +240,17 @@ def run(
     try:
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
-            train()
-            val_loss = evaluate(val_data)
+            means = MeanAggregator()
+            for i, (to_log, to_mean, to_write) in enumerate(train()):
+                means.update(**to_mean)
+                if (i + 1) % log_interval == 0:
+                    tune.report(**to_log)
+                    tune.report(**dict(means.items()))
+                    with tune.checkpoint_dir(epoch) as path:
+                        np.savez(path, to_write)
+                    means = MeanAggregator()
+
+            val_loss = np.mean(list(evaluate(val_data)))
             tune.report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
                 with open(save, "wb") as f:
@@ -256,7 +273,7 @@ def run(
             model.rnn.flatten_parameters()
 
     # Run on test data.
-    test_loss = evaluate(test_data)
+    test_loss = np.mean(list(evaluate(test_data)))
     tune.report(test_loss=test_loss, test_ppl=math.exp(test_loss))
 
     if onnx_export:
