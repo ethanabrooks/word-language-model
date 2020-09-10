@@ -66,36 +66,30 @@ def run(
 
     eval_batch_size = 10
     if debug_dataset:
-        if not data.exists():
-            n_seq = 10000
-            seq_len = bptt
-            n_tokens = 10
-            p = 0.8
-            print(
-                f"Data not found. Generating DebugDataset with size {n_seq} x {seq_len}, {n_tokens} tokens, and p={p}"
-            )
-            DebugDataset.generate(
-                data, seed, n_seq=n_seq, seq_len=seq_len, n_tokens=n_tokens, p=p
-            )
-        dataset = DebugDataset(data)
-        assert bptt == dataset.bptt, f"set --bptt={dataset.bptt}."
+        dataset = DebugDataset(data, device)
+        n_tokens = dataset.n_tokens
         n_seq = len(dataset)
         size_valid = int(n_seq * 0.2)
         size_test = int(n_seq * 0.1)
-        train_data, val_data, test_data = (
-            DataLoader(d, batch_size=batch_size)
-            for d in torch.utils.data.random_split(
-                dataset, [n_seq - size_test - size_valid, size_valid, size_test]
-            )
+        train_data, val_data, test_data = torch.utils.data.random_split(
+            dataset, [n_seq - size_test - size_valid, size_valid, size_test]
         )
-        n_tokens = dataset.n_tokens
     else:
         corpus = Corpus(data)
-        train_data = DataLoader(LMDataset(corpus.train, bptt), batch_size=batch_size)
-        val_data = DataLoader(LMDataset(corpus.valid, bptt), batch_size=batch_size)
-        test_data = DataLoader(LMDataset(corpus.test, bptt), batch_size=batch_size)
-
         n_tokens = len(corpus.dictionary)
+        train_data = LMDataset(
+            corpus.train, bptt, batch_size=batch_size, device=device
+        )  # [104431, 20]
+        val_data = LMDataset(
+            corpus.valid, bptt, batch_size=batch_size, device=device
+        )  # [21764, 10]
+        test_data = LMDataset(
+            corpus.test, bptt, batch_size=batch_size, device=device
+        )  # [24556, 10]
+
+    train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    val_data = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+    test_data = DataLoader(test_data, batch_size=batch_size, shuffle=True)
 
     ###############################################################################
     # Build the model
@@ -137,20 +131,21 @@ def run(
         model.train()
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, (data, targets) in enumerate(train_data):
-            data = data.to(device)
-            targets = targets.to(device)
+            targets = targets.flatten()
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
             if not recurrent:
                 output = model(data)
+                output = output.view(-1, n_tokens)
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
             is_accurate = output.max(-1).indices == targets
             assert isinstance(is_accurate, torch.Tensor)
             accuracy = torch.mean(is_accurate.float())
-            loss = criterion(output.reshape(-1, n_tokens), targets.view(-1))
+            loss = criterion(output, targets)
             loss.backward()
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -158,12 +153,13 @@ def run(
             for p in model.parameters():
                 p.data.add_(p.grad, alpha=-lr)
 
+            # TODO: only save a subset of data/output/targets
             info = dict(epoch=epoch, batch=batch)
             mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
             write_info = dict(
-                data=data[0],
-                output=output.view(*data.shape, -1)[0],
-                targets=targets.view(data.shape)[0],
+                data=data[:, 0],
+                output=output.view(*data.shape, -1)[:, 0],
+                targets=targets.view(data.shape)[:, 0],
             )
             yield info, mean_info, write_info
             if dry_run:
@@ -175,16 +171,14 @@ def run(
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
-            for i, (data, targets) in enumerate(data_source):
-                data = data.to(device)
-                targets = targets.to(device)
+            for (data, targets) in data_source:
+                targets = targets.flatten()
                 if not recurrent:
                     output = model(data)
+                    output = output.view(-1, n_tokens)
                 else:
                     output, hidden = model(data, hidden)
                     hidden = repackage_hidden(hidden)
-                output = output.reshape(-1, n_tokens)
-                targets = targets.view(-1)
                 yield len(data) * criterion(output, targets).item()
 
     def export_onnx(path, batch_size, seq_len):
@@ -205,35 +199,32 @@ def run(
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
-        steps_since_save = 0
-        # Loop over epochs.
         for epoch in range(1, epochs + 1):
             # epoch_start_time = time.time()
             means = MeanAggregator()
-            for i, (info, mean_info, write_info) in enumerate(train()):
-                means.update(**mean_info)
+            for i, (to_log, to_mean, to_write) in enumerate(train()):
+                means.update(**to_mean)
                 if (i + 1) % log_interval == 0:
-                    report(**info, **dict(means.items()))
+                    report(**to_log)
+                    report(**dict(means.items()))
+                    means = MeanAggregator()
                     with tune.checkpoint_dir(epoch) as path:
                         np.savez(
                             path,
                             **{
-                                k: v.detach().cpu().numpy()
-                                for k, v in write_info.items()
+                                k: v.detach().cpu().numpy() for k, v in to_write.items()
                             },
                         )
 
             val_loss = np.mean(list(evaluate(val_data)))
-            report(val_loss=val_loss, steps_since_save=steps_since_save)
+            report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
                     torch.save(model, f)
                 best_val_loss = val_loss
-                steps_since_save = 0
             else:
                 # Anneal the learning rate if no improvement has been seen in the validation dataset.
                 lr /= 4.0
-                steps_since_save += 1
     except KeyboardInterrupt:
         print("-" * 89)
         print("Exiting from training early")

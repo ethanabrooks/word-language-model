@@ -54,29 +54,34 @@ class Corpus(object):
 
 
 class LMDataset(Dataset):
-    def __init__(self, tokens: torch.Tensor, bptt: int):
+    def __init__(self, data_source: torch.Tensor, bptt: int, batch_size, device):
         self.bptt = bptt
-        self.tokens = tokens
+        # Work out how cleanly we can divide the dataset into bsz parts.
+        n_batch = data_source.size(0) // batch_size
+        # Trim off any extra elements that wouldn't cleanly fit (remainders).
+        data_source = data_source.narrow(0, 0, n_batch * batch_size)
+        self.tokens = data_source.to(device)
 
     def __getitem__(self, index):
-        return (
-            self.tokens[index : index + self.bptt],
-            self.tokens[index + 1 : index + self.bptt + 1],
-        )
+        i = index * self.bptt
+        data = self.tokens[i : i + self.bptt]
+        target = self.tokens[i + 1 : i + 1 + self.bptt].view(-1)
+        return data, target
 
     def __len__(self):
-        return len(self.tokens) - self.bptt
+        return len(self.tokens) // self.bptt
 
 
 class DebugDataset(Dataset):
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, device):
         arrays = np.load(str(path))
-        self.target = torch.Tensor(arrays["target"]).long()
-        self.data = torch.Tensor(arrays["data"]).long()
-        self.n_tokens = 1 + torch.Tensor(arrays["mapping"]).size(0)
+        self.target = torch.Tensor(arrays["target"]).long().to(device)
+        self.data = torch.Tensor(arrays["data"]).long().to(device)
+        self.mapping = torch.Tensor(arrays["mapping"]).to(device)
+        self.n_tokens = 1 + self.mapping.size(0)
         # print("MAPPING")
         # for i, row in enumerate(arrays["mapping"].T):
-            # print(i, np.arange(self.n_tokens - 1)[row])
+        # print(i, np.arange(self.n_tokens - 1)[row])
         self.bptt = self.data.size(1)
 
     def print_mapping(self):
