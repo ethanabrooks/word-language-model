@@ -1,0 +1,20 @@
+{
+  "batch_size": 20,
+  "bptt": 25,
+  "clip": 0.3,
+  "cuda": false,
+  "data": "/data/debug",
+  "dropout": 0.1,
+  "dry_run": false,
+  "em_size": 200,
+  "epochs": 100,
+  "log_interval": 1,
+  "lr": 10,
+  "model": "transformer",
+  "n_head": 2,
+  "n_hid": 250,
+  "n_layers": 3,
+  "save": "model.pt",
+  "seed": 1111,
+  "tied": false
+}
