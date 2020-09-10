@@ -1,8 +1,8 @@
 name: torch
 channels:
-  - pytorch
-  - conda-forge
+  - pytorch-nightly
   - anaconda
+  - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
@@ -11,7 +11,7 @@ dependencies:
   - ca-certificates=2020.7.22=0
   - certifi=2020.6.20=py38_0
   - cloudpickle=1.3.0=py_0
-  - cudatoolkit=10.2.89=hfd86e86_1
+  - cudatoolkit=10.1.243=h6bb024c_0
   - cycler=0.10.0=py38_0
   - dbus=1.13.16=hb2f20db_0
   - decorator=4.4.2=py_0
@@ -74,7 +74,7 @@ dependencies:
   - python=3.8.5=hcff3b4d_0
   - python-dateutil=2.8.1=py_0
   - python_abi=3.8=1_cp38
-  - pytorch=1.6.0=py3.8_cuda10.2.89_cudnn7.6.5_0
+  - pytorch=1.7.0.dev20200906=py3.8_cuda10.1.243_cudnn7.6.3_0
   - pytz=2020.1=py_0
   - qt=5.9.7=h5867ecd_1
   - readline=8.0=h7b6447c_0
@@ -85,8 +85,10 @@ dependencies:
   - sqlite=3.33.0=h62c20be_0
   - tensorboardx=2.1=py_0
   - tk=8.6.10=hbc83047_0
+  - torchvision=0.8.0.dev20200906=py38_cu101
   - tornado=6.0.4=py38h7b6447c_1
   - tqdm=4.48.2=pyh9f0ad1d_0
+  - typing_extensions=3.7.4.3=py_0
   - wheel=0.35.1=py_0
   - x264=1!152.20180806=h14c3975_0
   - xz=5.2.5=h7b6447c_0
@@ -147,4 +149,5 @@ dependencies:
     - urllib3==1.25.10
     - wcwidth==0.2.5
     - yarl==1.5.1
-prefix: /opt/conda/envs/teacher
+prefix: /home/ethanbro/miniconda3/envs/torch
+
