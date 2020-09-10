@@ -164,6 +164,10 @@ def run(
             target = source[i + 1 : i + 1 + seq_len].view(-1)
             return data, target
 
+    def get_batches(data_source):
+        for batch, i in enumerate(range(0, size_data(data_source) - 1, bptt)):
+            yield get_batch(train_data, i)
+
     criterion = nn.NLLLoss()
 
     # Loop over epochs.
@@ -173,8 +177,9 @@ def run(
         # Turn on training mode which enables dropout.
         model.train()
         hidden = model.init_hidden(batch_size) if recurrent else None
-        for batch, i in enumerate(range(0, size_data(train_data) - 1, bptt)):
-            data, targets = get_batch(train_data, i)
+        for batch, (data, targets) in enumerate(get_batches(train_data)):
+            data = data.to(device)
+            targets = targets.to(device)
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
@@ -213,8 +218,7 @@ def run(
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
-            for i in range(0, size_data(data_source) - 1, bptt):
-                data, targets = get_batch(data_source, i)
+            for (data, targets) in get_batches(data_source):
                 if not recurrent:
                     output = model(data)
                     output = output.view(-1, n_tokens)
