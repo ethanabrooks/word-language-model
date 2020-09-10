@@ -52,23 +52,19 @@ class Corpus(object):
 
 
 class LMDataset(Dataset):
-    def __init__(self, data_source: torch.Tensor, bptt: int, bsz, device):
+    def __init__(self, data_source: torch.Tensor, bptt: int, batch_size, device):
         self.bptt = bptt
         # Work out how cleanly we can divide the dataset into bsz parts.
-        n_batch = data_source.size(0) // bsz
+        n_batch = data_source.size(0) // batch_size
         # Trim off any extra elements that wouldn't cleanly fit (remainders).
-        data_source = data_source.narrow(0, 0, n_batch * bsz)
-        # Evenly divide the data across the bsz batches.
-        data_source = data_source.view(bsz, -1).t().contiguous()
-        self.tokens = data_source.to(device).flatten()
+        data_source = data_source.narrow(0, 0, n_batch * batch_size)
+        self.tokens = data_source.to(device)
 
     def __getitem__(self, index):
         i = index * self.bptt
-        seq_len = min(self.bptt, len(self.tokens) - 1 - i)
-        data = self.tokens[i : i + seq_len]
-        target = self.tokens[i + 1 : i + 1 + seq_len].view(-1)
-        result = data, target
-        return result
+        data = self.tokens[i : i + self.bptt]
+        target = self.tokens[i + 1 : i + 1 + self.bptt].view(-1)
+        return data, target
 
     def __len__(self):
         return len(self.tokens) // self.bptt

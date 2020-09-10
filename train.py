@@ -99,17 +99,17 @@ def run(
         # [21764, 10]
         # [24556, 10]
         train_data = DataLoader(
-            LMDataset(corpus.train, bptt, bsz=batch_size, device=device),
+            LMDataset(corpus.train, bptt, batch_size=batch_size, device=device),
             batch_size=batch_size,
             shuffle=True,
         )
         val_data = DataLoader(
-            LMDataset(corpus.valid, bptt, bsz=batch_size, device=device),
+            LMDataset(corpus.valid, bptt, batch_size=batch_size, device=device),
             batch_size=batch_size,
             shuffle=True,
         )
         test_data = DataLoader(
-            LMDataset(corpus.test, bptt, bsz=batch_size, device=device),
+            LMDataset(corpus.test, bptt, batch_size=batch_size, device=device),
             batch_size=batch_size,
             shuffle=True,
         )
