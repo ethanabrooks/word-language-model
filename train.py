@@ -95,30 +95,25 @@ def run(
         )
     else:
         corpus = Corpus(data)
-        # [104431, 20]
-        # [21764, 10]
-        # [24556, 10]
-        train_data = DataLoader(
-            LMDataset(corpus.train, bptt, batch_size=batch_size, device=device),
-            batch_size=batch_size,
-            shuffle=True,
-        )
-        val_data = DataLoader(
-            LMDataset(corpus.valid, bptt, batch_size=batch_size, device=device),
-            batch_size=batch_size,
-            shuffle=True,
-        )
-        test_data = DataLoader(
-            LMDataset(corpus.test, bptt, batch_size=batch_size, device=device),
-            batch_size=batch_size,
-            shuffle=True,
-        )
+        train_data = LMDataset(
+            corpus.train, bptt, batch_size=batch_size, device=device
+        )  # [104431, 20]
+        val_data = LMDataset(
+            corpus.valid, bptt, batch_size=batch_size, device=device
+        )  # [21764, 10]
+        test_data = LMDataset(
+            corpus.test, bptt, batch_size=batch_size, device=device
+        )  # [24556, 10]
 
-        ###############################################################################
-        # Build the model
-        ###############################################################################
+    train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    val_data = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+    test_data = DataLoader(test_data, batch_size=batch_size, shuffle=True)
 
-        n_tokens = len(corpus.dictionary)
+    ###############################################################################
+    # Build the model
+    ###############################################################################
+
+    n_tokens = len(corpus.dictionary)
 
     def size_data(data):
         if debug_dataset:
