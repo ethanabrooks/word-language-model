@@ -329,10 +329,18 @@ class TransformerEncoderLayer(Module):
     """
 
     def __init__(
-        self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"
+        self,
+        d_model,
+        nhead,
+        dim_feedforward=2048,
+        dropout=0.1,
+        activation="relu",
+        **kwargs
     ):
         super(TransformerEncoderLayer, self).__init__()
-        self.self_attn = self.build_multihead_attention(d_model, dropout, nhead)
+        self.self_attn = self.build_multihead_attention(
+            d_model, dropout, nhead, **kwargs
+        )
         # Implementation of Feedforward model
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
@@ -346,7 +354,7 @@ class TransformerEncoderLayer(Module):
         self.activation = _get_activation_fn(activation)
 
     @staticmethod
-    def build_multihead_attention(d_model, dropout, nhead):
+    def build_multihead_attention(d_model, dropout, nhead, **kwargs):
         return MultiheadAttention(d_model, nhead, dropout=dropout)
 
     def __setstate__(self, state):
