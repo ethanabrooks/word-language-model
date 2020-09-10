@@ -207,9 +207,14 @@ def run(
                 if (i + 1) % log_interval == 0:
                     report(**to_log)
                     report(**dict(means.items()))
-                    with tune.checkpoint_dir(epoch) as path:
-                        np.savez(path, to_write)
                     means = MeanAggregator()
+                    with tune.checkpoint_dir(epoch) as path:
+                        np.savez(
+                            path,
+                            **{
+                                k: v.detach().cpu().numpy() for k, v in to_write.items()
+                            },
+                        )
 
             val_loss = np.mean(list(evaluate(val_data)))
             report(val_loss=val_loss)
