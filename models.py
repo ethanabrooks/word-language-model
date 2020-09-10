@@ -125,24 +125,26 @@ class PositionalEncoding(nn.Module):
 class TransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
-    def __init__(self, n_tokens, n_inp, n_head, n_hid, n_layers, dropout=0.5):
+    def __init__(
+        self, n_tokens, em_size, n_head, n_hid, n_layers, dropout=0.5, **kwargs
+    ):
         super(TransformerModel, self).__init__()
         self.model_type = "Transformer"
         self.src_mask = None
-        self.pos_encoder = PositionalEncoding(n_inp, dropout)
+        self.pos_encoder = PositionalEncoding(em_size, dropout)
         encoder_layers = self.build_transformer_encoder_layer(
-            dropout, n_head, n_hid, n_inp
+            dropout, n_head, n_hid, em_size, **kwargs
         )
         self.transformer_encoder = TransformerEncoder(encoder_layers, n_layers)
-        self.encoder = nn.Embedding(n_tokens, n_inp)
-        self.ninp = n_inp
-        self.decoder = nn.Linear(n_inp, n_tokens)
+        self.encoder = nn.Embedding(n_tokens, em_size)
+        self.em_size = em_size
+        self.decoder = nn.Linear(em_size, n_tokens)
 
         self.init_weights()
 
     @staticmethod
-    def build_transformer_encoder_layer(dropout, nhead, nhid, ninp):
-        return TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+    def build_transformer_encoder_layer(dropout, nhead, nhid, ninp, **kwargs):
+        return TransformerEncoderLayer(ninp, nhead, nhid, dropout, **kwargs)
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -174,6 +176,6 @@ class TransformerModel(nn.Module):
         return F.log_softmax(output, dim=-1)
 
     def encode_pos(self, src):
-        src = src * math.sqrt(self.ninp)
+        src = src * math.sqrt(self.em_size)
         src = self.pos_encoder(src)
         return src

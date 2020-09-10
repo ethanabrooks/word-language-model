@@ -1,40 +1,54 @@
-from typing import Optional, Tuple
-
 import torch
-from torch.nn import Parameter, Linear
-from torch.nn.init import xavier_uniform_
+from torch import Tensor
 
 import models
 import multihead_attention
 import transformer
-from torch import Tensor
 
 
 def with_last_col_1(x: Tensor, last1=None):
     if last1 is None:
         last1 = torch.zeros_like(x)
         last1[..., -1] = 1
-    return last1 * (1 - x) + (1 - last1) * x
+    return x - x * last1 + last1
+
+
+def with_first_col_1(x: Tensor, first1=None):
+    if first1 is None:
+        first1 = torch.zeros_like(x)
+        first1[..., 0] = 1
+    return x - x * first1 + first1
 
 
 def scan(x: Tensor) -> Tensor:
     return with_last_col_1((1 - x).cumprod(-1)).roll(1, -1) * x
 
 
-def scan_in_time(x: Tensor) -> Tensor:
+def scan_forward(x: Tensor) -> Tensor:
     x = torch.cat([row.roll(-i, -1) for i, row in enumerate(x.split(1, -2))], -2)
-    x = scan(with_last_col_1(x))
+    x = scan(x)
     return torch.cat([row.roll(i, -1) for i, row in enumerate(x.split(1, -2))], -2)
 
 
+def scan_backward(x: Tensor, last_col_1=False) -> Tensor:
+    *_, n = x.shape
+    x = x.flip(-1)
+    if last_col_1:
+        x = with_last_col_1(x)
+    n -= 1
+    x = torch.cat([row.roll(i - n, -1) for i, row in enumerate(x.split(1, -2))], -2)
+    x = scan(x)
+    x = torch.cat([row.roll(n - i, -1) for i, row in enumerate(x.split(1, -2))], -2)
+    return x.flip(-1)
+
+
 class MultiheadAttention(multihead_attention.MultiheadAttention):
-    def __init__(self, embed_dim, num_heads, *args, **kwargs):
-        head_dim = embed_dim // num_heads
-        super().__init__(embed_dim, num_heads, *args, **kwargs)
-        self.connect_proj_weight = Parameter(torch.Tensor(head_dim, head_dim))
-        # self.linear = Linear(head_dim, 2)
-        xavier_uniform_(self.connect_proj_weight)
-        # xavier_uniform_(self.linear.weight)
+    def __init__(
+        self, embed_dim, num_heads, last_col_1: bool, forward_scan: bool, **kwargs
+    ):
+        super().__init__(embed_dim, num_heads, **kwargs)
+        self.forward_scan = forward_scan
+        self.last_col_1 = last_col_1
 
     # noinspection PyPep8Naming
     def get_attn_output_weights(self, k, q):  # type: (Tensor, Tensor) -> Tensor
@@ -55,60 +69,42 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
             - attn_output_weights: :math:`(B * H, L, S)` where B is the batch size, H is the number of heads, L is the
             is the target sequence length and S is the source sequence length.
         """
-        L = q.size(1)
-        S = k.size(1)
-        forward_connections = (
-            q @ self.connect_proj_weight @ k.transpose(1, 2)
-        )  # (N, L, S)
-        backward_connections = (
-            q @ self.connect_proj_weight.T @ k.transpose(1, 2)
-        )  # (N, L, S)
-        scan_forward = scan_in_time(forward_connections)
-        scan_backward = scan_in_time(backward_connections.flip(-1)).flip(-1)
-        eye = torch.eye(L, S, device=q.device)
-        step_forward = eye.roll(1, -1)
-        step_backward = eye.roll(-1, -1)
-        step_forward[-1, 0] = 0
-        step_forward[-1, -1] = 1
-        step_backward[0, -1] = 0
-        step_backward[0, 0] = 1
-        # softmax = self.linear(q).softmax(-1)
+        if self.forward_scan:
+            assert q.size(-1) == k.size(-1)
+            E = q.size(-1)
+            q1, q2 = torch.split(q, [E - E // 2, E // 2], -1)
+            k1, k2 = torch.split(q, [E - E // 2, E // 2], -1)
+            forward_connections = q1 @ k1.transpose(1, 2)  # (N, L, S)
+            backward_connections = q2 @ k2.transpose(1, 2)  # (N, L, S)
+            forward_scan = scan_forward(backward_connections.sigmoid())
+            backward_scan = scan_backward(forward_connections.sigmoid())
+            backward_sums = backward_scan.sum(-1, keepdim=True)
+            forward_sums = forward_scan.sum(-1, keepdim=True)
+            attn_output = (backward_scan + forward_scan) / (
+                backward_sums + forward_sums
+            )
+            return attn_output
+        connections = q @ k.transpose(1, 2)  # (N, L, S)
+        return scan_backward(connections.sigmoid(), last_col_1=self.last_col_1)
 
-        return scan_backward
+    @staticmethod
+    def softmax(attn_output_weights):
+        return attn_output_weights
+
+    @staticmethod
+    def apply_mask(attn_mask, attn_output_weights):
+        return attn_output_weights * attn_mask.exp()
 
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):
-    def build_multihead_attention(self, d_model, dropout, nhead):
-        return MultiheadAttention(d_model, nhead, dropout=dropout)
-
-
-class TransformerDecoderLayer(transformer.TransformerDecoderLayer):
-    def build_multihead_attention(self, d_model, dropout, nhead):
-        return MultiheadAttention(d_model, nhead, dropout=dropout)
-
-
-class Transformer(transformer.Transformer):
-    @staticmethod
-    def build_transformer_decoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
-    ):
-        return TransformerDecoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
-        )
-
-    @staticmethod
-    def build_transformer_encoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
-    ):
-        return TransformerEncoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
-        )
+    def build_multihead_attention(self, d_model, dropout, nhead, **kwargs):
+        return MultiheadAttention(d_model, nhead, dropout=dropout, **kwargs)
 
 
 class TransformerModel(models.TransformerModel):
     @staticmethod
-    def build_transformer_encoder_layer(dropout, nhead, nhid, ninp):
-        return TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+    def build_transformer_encoder_layer(dropout, nhead, nhid, ninp, **kwargs):
+        return TransformerEncoderLayer(ninp, nhead, nhid, dropout, **kwargs)
 
     def encode_pos(self, src):
         return src

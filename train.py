@@ -37,7 +37,6 @@ def run(
     cuda: bool,
     data: Path,
     dry_run: bool,
-    em_size: int,
     epochs: int,
     log_interval: int,
     lr: float,
@@ -102,7 +101,7 @@ def run(
 
     if load is None:
         recurrent = model not in ["transformer", "ours"]
-        kwargs.update(n_tokens=n_tokens, n_inp=em_size)
+        kwargs.update(n_tokens=n_tokens)
         if model == "transformer":
             model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
         elif model == "ours":
