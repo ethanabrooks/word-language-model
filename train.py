@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 import models
 import ours
-from data import Corpus, LMDataset
+from data import Corpus, LMDataset, get_batch, batchify
 
 
 class Aggregator(ABC):
@@ -77,15 +77,6 @@ def run(
     # dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
     # batch processing.
 
-    def batchify(data_source, bsz):
-        # Work out how cleanly we can divide the dataset into bsz parts.
-        n_batch = data_source.size(0) // bsz
-        # Trim off any extra elements that wouldn't cleanly fit (remainders).
-        data_source = data_source.narrow(0, 0, n_batch * bsz)
-        # Evenly divide the data across the bsz batches.
-        data_source = data_source.view(bsz, -1).t().contiguous()
-        return data_source.to(device)
-
     debug_dataset = "debug" in str(data)
 
     eval_batch_size = 10
@@ -103,9 +94,9 @@ def run(
         )
     else:
         corpus = Corpus(data)
-        train_data = batchify(corpus.train, batch_size)  # [104431, 20]
-        val_data = batchify(corpus.valid, eval_batch_size)  # [21764, 10]
-        test_data = batchify(corpus.test, eval_batch_size)  # [24556, 10]
+        train_data = batchify(corpus.train, batch_size, device)  # [104431, 20]
+        val_data = batchify(corpus.valid, eval_batch_size, device)  # [21764, 10]
+        test_data = batchify(corpus.test, eval_batch_size, device)  # [24556, 10]
 
         ###############################################################################
         # Build the model
@@ -153,20 +144,9 @@ def run(
     # by the batchify function. The chunks are along dimension 0, corresponding
     # to the seq_len dimension in the LSTM.
 
-    def get_batch(source, i):
-        if debug_dataset:
-            data, target = source
-            seq_len = min(bptt, len(data) - 1 - i)
-            return data[i : i + seq_len], target[i : i + seq_len].flatten()
-        else:
-            seq_len = min(bptt, len(source) - 1 - i)
-            data = source[i : i + seq_len]
-            target = source[i + 1 : i + 1 + seq_len].view(-1)
-            return data, target
-
     def get_batches(data_source):
         for batch, i in enumerate(range(0, size_data(data_source) - 1, bptt)):
-            yield get_batch(train_data, i)
+            yield get_batch(train_data, i, bptt)
 
     criterion = nn.NLLLoss()
 

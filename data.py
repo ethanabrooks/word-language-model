@@ -5,6 +5,23 @@ import torch
 from torch.utils.data import Dataset
 
 
+def batchify(data_source, bsz, device):
+    # Work out how cleanly we can divide the dataset into bsz parts.
+    n_batch = data_source.size(0) // bsz
+    # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    data_source = data_source.narrow(0, 0, n_batch * bsz)
+    # Evenly divide the data across the bsz batches.
+    data_source = data_source.view(bsz, -1).t().contiguous()
+    return data_source.to(device)
+
+
+def get_batch(source, i, bptt):
+    seq_len = min(bptt, len(source) - 1 - i)
+    data = source[i : i + seq_len]
+    target = source[i + 1 : i + 1 + seq_len].view(-1)
+    return data, target
+
+
 class Dictionary(object):
     def __init__(self):
         self.word2idx = {}
@@ -57,11 +74,8 @@ class LMDataset(Dataset):
         self.tokens = tokens
 
     def __getitem__(self, index):
-        seq_len = min(self.bptt, len(self.tokens) - 1 - index)
-        return (
-            self.tokens[index : index + seq_len],
-            self.tokens[index + 1 : index + seq_len + 1],
-        )
+        i = index * self.bptt
+        return get_batch(self.tokens, i, self.bptt)
 
     def __len__(self):
         return len(self.tokens)
