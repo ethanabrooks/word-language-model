@@ -57,6 +57,7 @@ def add_arguments(parser):
         default=1,
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
+    parser.add_argument("--load", type=Path, help="path to load model from")
     parser.add_argument("--local-mode", action="store_true")
     parser.add_argument(
         "--log-interval", type=int, default=200, metavar="N", help="report interval"

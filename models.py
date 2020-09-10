@@ -125,18 +125,18 @@ class PositionalEncoding(nn.Module):
 class TransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
-    def __init__(self, ntoken, ninp, nhead, nhid, nlayers, dropout=0.5):
+    def __init__(self, n_tokens, n_inp, n_head, n_hid, n_layers, dropout=0.5):
         super(TransformerModel, self).__init__()
         self.model_type = "Transformer"
         self.src_mask = None
-        self.pos_encoder = PositionalEncoding(ninp, dropout)
+        self.pos_encoder = PositionalEncoding(n_inp, dropout)
         encoder_layers = self.build_transformer_encoder_layer(
-            dropout, nhead, nhid, ninp
+            dropout, n_head, n_hid, n_inp
         )
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        self.encoder = nn.Embedding(ntoken, ninp)
-        self.ninp = ninp
-        self.decoder = nn.Linear(ninp, ntoken)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, n_layers)
+        self.encoder = nn.Embedding(n_tokens, n_inp)
+        self.ninp = n_inp
+        self.decoder = nn.Linear(n_inp, n_tokens)
 
         self.init_weights()
 

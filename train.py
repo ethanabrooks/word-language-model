@@ -36,7 +36,6 @@ def run(
     clip: float,
     cuda: bool,
     data: Path,
-    dropout: float,
     dry_run: bool,
     em_size: int,
     epochs: int,
@@ -44,39 +43,24 @@ def run(
     lr: float,
     model: str,
     n_head: int,
-    n_hid: int,
-    n_layers: int,
     report: callable,
-    save: str,
+    save: Path,
     seed: int,
     tied: bool,
+    load: Optional[Path] = None,
     onnx_export: Optional[Path] = None,
+    **kwargs,
 ):
     # Set the random seed manually for reproducibility.
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        if not cuda:
-            print(
-                "WARNING: You have a CUDA device, so you should probably run with --cuda"
-            )
+    cuda = cuda and torch.cuda.is_available()
 
     device = torch.device("cuda" if cuda else "cpu")
+    print("Running with device:", device)
 
     ###############################################################################
     # Load data
     ###############################################################################
-
-    # Starting from sequential data, batchify arranges the dataset into columns.
-    # For instance, with the alphabet as the sequence and batch size 4, we'd get
-    # ┌ a g m s ┐
-    # │ b h n t │
-    # │ c i o u │
-    # │ d j p v │
-    # │ e k q w │
-    # └ f l r x ┘.
-    # These columns are treated as independent by the model, which means that the
-    # dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
-    # batch processing.
 
     debug_dataset = "debug" in str(data)
 
@@ -116,57 +100,33 @@ def run(
 
     n_tokens = len(corpus.dictionary)
 
-    def size_data(data):
-        if debug_dataset:
-            return data[0].size(0)
+    if load is None:
+        recurrent = model not in ["transformer", "ours"]
+        kwargs.update(n_tokens=n_tokens, n_inp=em_size)
+        if model == "transformer":
+            model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
+        elif model == "ours":
+            model = ours.TransformerModel(n_head=n_head, **kwargs).to(device)
         else:
-            return data.size(0)
-
-    recurrent = model not in ["transformer", "ours"]
-    if model == "transformer":
-        model = models.TransformerModel(
-            n_tokens, em_size, n_head, n_hid, n_layers, dropout
-        ).to(device)
-    elif model == "ours":
-        model = ours.TransformerModel(
-            n_tokens, em_size, n_head, n_hid, n_layers, dropout
-        ).to(device)
+            model = models.RNNModel(model, tied, **kwargs).to(device)
     else:
-        model = models.RNNModel(
-            model,
-            n_tokens,
-            em_size,
-            n_hid,
-            n_layers,
-            dropout,
-            tied,
-        ).to(device)
+        with load.open("rb") as f:
+            model = torch.load(f, map_location=device)
+            # after load the rnn params are not a continuous chunk of memory
+            # this makes them a continuous chunk, and will speed up forward pass
+            # Currently, only rnn model supports flatten_parameters function.
+            recurrent = type(model) not in (
+                models.TransformerModel,
+                ours.TransformerModel,
+            )
+            if recurrent:
+                model.rnn.flatten_parameters()
 
     ###############################################################################
     # Training code
     ###############################################################################
 
-    # get_batch subdivides the source data into chunks of length args.bptt.
-    # If source is equal to the example output of the batchify function, with
-    # a bptt-limit of 2, we'd get the following two Variables for i = 0:
-    # ┌ a g m s ┐ ┌ b h n t ┐
-    # └ b h n t ┘ └ c i o u ┘
-    # Note that despite the name of the function, the subdivison of data is not
-    # done along the batch dimension (i.e. dimension 1), since that was handled
-    # by the batchify function. The chunks are along dimension 0, corresponding
-    # to the seq_len dimension in the LSTM.
-
-    def get_batches(data_source):
-        for batch, i in enumerate(range(0, size_data(data_source) - 1, bptt)):
-            seq_len = min(bptt, len(train_data) - 1 - i)
-            data = train_data[i : i + seq_len]
-            target = train_data[i + 1 : i + 1 + seq_len].view(-1)
-            result = data, target
-            yield result
-
     criterion = nn.NLLLoss()
-
-    # Loop over epochs.
     best_val_loss = None
 
     def train():
@@ -259,7 +219,7 @@ def run(
             val_loss = np.mean(list(evaluate(val_data)))
             report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
-                with open(save, "wb") as f:
+                with save.open("wb") as f:
                     torch.save(model, f)
                 best_val_loss = val_loss
             else:
@@ -270,7 +230,7 @@ def run(
         print("Exiting from training early")
 
     # Load the best saved model.
-    with open(save, "rb") as f:
+    with save.open("rb") as f:
         model = torch.load(f)
         # after load the rnn params are not a continuous chunk of memory
         # this makes them a continuous chunk, and will speed up forward pass
