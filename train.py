@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 import models
 import ours
-from data import Corpus, LMDataset, get_batch, batchify
+from data import Corpus, LMDataset
 
 
 class Aggregator(ABC):
@@ -84,7 +84,8 @@ def run(
 
         def load(fname, bsz):
             arrays = np.load(str(Path(data, fname))).values()
-            return [batchify(torch.tensor(x, device=device), bsz) for x in arrays]
+            raise NotImplementedError
+            # return [batchify(torch.tensor(x, device=device), bsz) for x in arrays]
 
         train_data = load("train.npz", batch_size)
         val_data = load("valid.npz", eval_batch_size)
@@ -94,12 +95,18 @@ def run(
         )
     else:
         corpus = Corpus(data)
-        train_data = batchify(corpus.train, batch_size, device)  # [104431, 20]
-        val_data = batchify(corpus.valid, eval_batch_size, device)  # [21764, 10]
-        test_data = batchify(corpus.test, eval_batch_size, device)  # [24556, 10]
-        train_data = DataLoader(LMDataset(train_data, bptt))
-        val_data = DataLoader(LMDataset(val_data, bptt))
-        test_data = DataLoader(LMDataset(test_data, bptt))
+        # [104431, 20]
+        # [21764, 10]
+        # [24556, 10]
+        train_data = DataLoader(
+            LMDataset(corpus.train, bptt, bsz=batch_size, device=device)
+        )
+        val_data = DataLoader(
+            LMDataset(corpus.valid, bptt, bsz=batch_size, device=device)
+        )
+        test_data = DataLoader(
+            LMDataset(corpus.test, bptt, bsz=batch_size, device=device)
+        )
 
         ###############################################################################
         # Build the model
@@ -149,7 +156,11 @@ def run(
 
     def get_batches(data_source):
         for batch, i in enumerate(range(0, size_data(data_source) - 1, bptt)):
-            yield get_batch(train_data, i, bptt)
+            seq_len = min(bptt, len(train_data) - 1 - i)
+            data = train_data[i : i + seq_len]
+            target = train_data[i + 1 : i + 1 + seq_len].view(-1)
+            result = data, target
+            yield result
 
     criterion = nn.NLLLoss()
 

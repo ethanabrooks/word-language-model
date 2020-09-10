@@ -5,23 +5,6 @@ import torch
 from torch.utils.data import Dataset
 
 
-def batchify(data_source, bsz, device):
-    # Work out how cleanly we can divide the dataset into bsz parts.
-    n_batch = data_source.size(0) // bsz
-    # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    data_source = data_source.narrow(0, 0, n_batch * bsz)
-    # Evenly divide the data across the bsz batches.
-    data_source = data_source.view(bsz, -1).t().contiguous()
-    return data_source.to(device)
-
-
-def get_batch(source, i, bptt):
-    seq_len = min(bptt, len(source) - 1 - i)
-    data = source[i : i + seq_len]
-    target = source[i + 1 : i + 1 + seq_len].view(-1)
-    return data, target
-
-
 class Dictionary(object):
     def __init__(self):
         self.word2idx = {}
@@ -69,13 +52,23 @@ class Corpus(object):
 
 
 class LMDataset(Dataset):
-    def __init__(self, tokens: torch.Tensor, bptt: int):
+    def __init__(self, data_source: torch.Tensor, bptt: int, bsz, device):
         self.bptt = bptt
-        self.tokens = tokens
+        # Work out how cleanly we can divide the dataset into bsz parts.
+        n_batch = data_source.size(0) // bsz
+        # Trim off any extra elements that wouldn't cleanly fit (remainders).
+        data_source = data_source.narrow(0, 0, n_batch * bsz)
+        # Evenly divide the data across the bsz batches.
+        data_source = data_source.view(bsz, -1).t().contiguous()
+        self.tokens = data_source.to(device)
 
     def __getitem__(self, index):
         i = index * self.bptt
-        return get_batch(self.tokens, i, self.bptt)
+        seq_len = min(self.bptt, len(self.tokens) - 1 - i)
+        data = self.tokens[i : i + seq_len]
+        target = self.tokens[i + 1 : i + 1 + seq_len].view(-1)
+        result = data, target
+        return result
 
     def __len__(self):
         return len(self.tokens) // self.bptt
