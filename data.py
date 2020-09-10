@@ -78,7 +78,7 @@ class LMDataset(Dataset):
         return get_batch(self.tokens, i, self.bptt)
 
     def __len__(self):
-        return len(self.tokens)
+        return len(self.tokens) // self.bptt
 
 
 class DebugDataset(Dataset):

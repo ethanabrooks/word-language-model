@@ -97,6 +97,9 @@ def run(
         train_data = batchify(corpus.train, batch_size, device)  # [104431, 20]
         val_data = batchify(corpus.valid, eval_batch_size, device)  # [21764, 10]
         test_data = batchify(corpus.test, eval_batch_size, device)  # [24556, 10]
+        train_data = DataLoader(LMDataset(train_data, bptt))
+        val_data = DataLoader(LMDataset(val_data, bptt))
+        test_data = DataLoader(LMDataset(test_data, bptt))
 
         ###############################################################################
         # Build the model
@@ -157,9 +160,10 @@ def run(
         # Turn on training mode which enables dropout.
         model.train()
         hidden = model.init_hidden(batch_size) if recurrent else None
-        for batch, (data, targets) in enumerate(get_batches(train_data)):
-            data = data.to(device)
-            targets = targets.to(device)
+        for batch, (data, targets) in enumerate(train_data):
+            data = data.to(device).squeeze(0)
+            targets = targets.to(device).squeeze(0)
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
@@ -198,7 +202,9 @@ def run(
         if recurrent:
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
-            for (data, targets) in get_batches(data_source):
+            for (data, targets) in data_source:
+                data = data.to(device).squeeze(0)
+                targets = targets.to(device).squeeze(0)
                 if not recurrent:
                     output = model(data)
                     output = output.view(-1, n_tokens)
