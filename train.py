@@ -99,13 +99,19 @@ def run(
         # [21764, 10]
         # [24556, 10]
         train_data = DataLoader(
-            LMDataset(corpus.train, bptt, bsz=batch_size, device=device)
+            LMDataset(corpus.train, bptt, bsz=batch_size, device=device),
+            batch_size=batch_size,
+            shuffle=True,
         )
         val_data = DataLoader(
-            LMDataset(corpus.valid, bptt, bsz=batch_size, device=device)
+            LMDataset(corpus.valid, bptt, bsz=batch_size, device=device),
+            batch_size=batch_size,
+            shuffle=True,
         )
         test_data = DataLoader(
-            LMDataset(corpus.test, bptt, bsz=batch_size, device=device)
+            LMDataset(corpus.test, bptt, bsz=batch_size, device=device),
+            batch_size=batch_size,
+            shuffle=True,
         )
 
         ###############################################################################
@@ -172,8 +178,8 @@ def run(
         model.train()
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, (data, targets) in enumerate(train_data):
-            data = data.to(device).squeeze(0)
-            targets = targets.to(device).squeeze(0)
+            data = data.to(device)
+            targets = targets.to(device).flatten()
 
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
@@ -214,8 +220,8 @@ def run(
             hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
             for (data, targets) in data_source:
-                data = data.to(device).squeeze(0)
-                targets = targets.to(device).squeeze(0)
+                data = data.to(device)
+                targets = targets.to(device).flatten()
                 if not recurrent:
                     output = model(data)
                     output = output.view(-1, n_tokens)

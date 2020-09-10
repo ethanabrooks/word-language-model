@@ -60,7 +60,7 @@ class LMDataset(Dataset):
         data_source = data_source.narrow(0, 0, n_batch * bsz)
         # Evenly divide the data across the bsz batches.
         data_source = data_source.view(bsz, -1).t().contiguous()
-        self.tokens = data_source.to(device)
+        self.tokens = data_source.to(device).flatten()
 
     def __getitem__(self, index):
         i = index * self.bptt
