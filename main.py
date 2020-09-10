@@ -156,7 +156,8 @@ def main(
         def report(**kwargs):
             pprint(kwargs)
 
-        run(**config, report=report)
+        config.update(report=report)
+        run(**config)
 
 
 if __name__ == "__main__":
