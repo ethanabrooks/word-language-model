@@ -93,7 +93,7 @@ def run(
         # Build the model
         ###############################################################################
 
-        n_tokens = len(corpus.dictionary)
+        n_tokens = 1 + len(corpus.dictionary)
 
     def size_data(data):
         if debug_dataset:
@@ -143,8 +143,9 @@ def run(
         else:
             seq_len = min(bptt, len(source) - 1 - i)
             data = source[i : i + seq_len]
-            target = source[i + 1 : i + 1 + seq_len].view(-1)
-            return data, target
+            target = data.roll(1, 0)
+            target[0] = n_tokens - 1
+            return data, target.view(-1)
 
     criterion = nn.NLLLoss()
 
