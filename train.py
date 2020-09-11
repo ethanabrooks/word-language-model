@@ -65,8 +65,9 @@ def run(
         # Trim off any extra elements that wouldn't cleanly fit (remainders).
         data_source = data_source.narrow(0, 0, n_batch * bsz)
         # Evenly divide the data across the bsz batches.
-        data_source = data_source.view(bsz, -1).t().contiguous()
-        return data_source.to(device)
+        data_source = data_source.view(bsz, -1).t().contiguous().to(device)
+        targets = data_source.roll(1, 0)
+        return data_source, targets
 
     debug_dataset = "debug" in str(data)
 
@@ -99,7 +100,7 @@ def run(
         if debug_dataset:
             return data[0].size(0)
         else:
-            return data.size(0)
+            return data[0].size(0)
 
     recurrent = model not in ["transformer", "ours"]
     if model == "transformer":
@@ -112,13 +113,7 @@ def run(
         ).to(device)
     else:
         model = models.RNNModel(
-            model,
-            n_tokens,
-            em_size,
-            n_hid,
-            n_layers,
-            dropout,
-            tied,
+            model, n_tokens, em_size, n_hid, n_layers, dropout, tied,
         ).to(device)
 
     ###############################################################################
@@ -135,15 +130,15 @@ def run(
     # by the batchify function. The chunks are along dimension 0, corresponding
     # to the seq_len dimension in the LSTM.
 
-    def get_batch(source, i):
+    def get_batch(data, target, i):
         if debug_dataset:
             data, target = source
             seq_len = min(bptt, len(data) - 1 - i)
             return data[i : i + seq_len], target[i : i + seq_len].flatten()
         else:
-            seq_len = min(bptt, len(source) - 1 - i)
-            data = source[i : i + seq_len]
-            target = data.roll(1, 0)
+            seq_len = min(bptt, len(data) - 1 - i)
+            data = data[i : i + seq_len]
+            target = target[i : i + seq_len]
             target[0] = n_tokens - 1
             return data, target.view(-1)
 
@@ -159,7 +154,7 @@ def run(
         total_accuracy = 0.0
         hidden = model.init_hidden(batch_size) if recurrent else None
         for batch, i in enumerate(range(0, size_data(train_data) - 1, bptt)):
-            data, targets = get_batch(train_data, i)
+            data, targets = get_batch(*train_data, i)
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
