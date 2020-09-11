@@ -6,6 +6,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.onnx
+from tensorboardX import SummaryWriter
 
 import data
 import model
@@ -27,6 +28,7 @@ parser.add_argument(
     "--nhid", type=int, default=200, help="number of hidden units per layer"
 )
 parser.add_argument("--nlayers", type=int, default=2, help="number of layers")
+parser.add_argument("--log-dir", required=True)
 parser.add_argument("--lr", type=float, default=20, help="initial learning rate")
 parser.add_argument("--clip", type=float, default=0.25, help="gradient clipping")
 parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
@@ -186,7 +188,10 @@ def evaluate(data_source):
     return total_loss / (len(data_source) - 1)
 
 
-def train():
+writer = SummaryWriter(args.log_dir)
+
+
+def train(n):
     # Turn on training mode which enables dropout.
     model.train()
     total_loss = 0.0
@@ -195,6 +200,7 @@ def train():
     if args.model != "Transformer":
         hidden = model.init_hidden(args.batch_size)
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
+        n += 1
         data, targets = get_batch(train_data, i)
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
@@ -232,8 +238,13 @@ def train():
             )
             total_loss = 0
             start_time = time.time()
+            writer.add_scalar("epoch", epoch, n)
+            writer.add_scalar("batches", batch, n)
+            writer.add_scalar("loss", cur_loss, n)
         if args.dry_run:
             break
+
+    return n
 
 
 def export_onnx(path, batch_size, seq_len):
@@ -256,9 +267,10 @@ best_val_loss = None
 
 # At any point you can hit Ctrl + C to break out of training early.
 try:
+    n = 0
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
-        train()
+        n = train(n)
         val_loss = evaluate(val_data)
         print("-" * 89)
         print(
