@@ -1,0 +1,23 @@
+{
+  "batch_size": 5,
+  "bptt": 45,
+  "clip": 0.2,
+  "cuda": true,
+  "data": "/root/data/wikitext-2",
+  "dropout": 0.05,
+  "dry_run": false,
+  "em_size": 300,
+  "epochs": 2,
+  "forward_scan": true,
+  "last_col_1": true,
+  "log_interval": 10,
+  "lr": 10,
+  "model": "ours",
+  "n_head": 5,
+  "n_hid": 200,
+  "n_layers": 3,
+  "report": "<function report at 0x7f3dcd0734c0>",
+  "save": "model.pt",
+  "seed": 0,
+  "tied": false
+}
