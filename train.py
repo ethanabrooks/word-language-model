@@ -133,7 +133,7 @@ def run(
             model.zero_grad()
             if not recurrent:
                 output = model(data)
-                output = output.view(-1, n_tokens)
+                output = output.reshape(-1, n_tokens)
             else:
                 hidden = repackage_hidden(hidden)
                 output, hidden = model(data, hidden)
