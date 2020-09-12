@@ -94,6 +94,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--save", type=Path, default="model.pt", help="path to save the final model"
     )
+    parser.add_argument("--schedule-rate", type=float)
     parser.add_argument(
         "--seed",
         type=int,

@@ -44,6 +44,7 @@ def run(
     n_heads: int,
     report: callable,
     save: Path,
+    schedule_rate: float,
     seed: int,
     tied: bool,
     warmup: int,

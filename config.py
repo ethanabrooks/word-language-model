@@ -26,6 +26,7 @@ default = dict(
     n_heads=2,
     n_hid=200,
     n_layers=2,
+    schedule_rate=-0.5,
     seed=1111,
 )
 
@@ -41,6 +42,7 @@ search = dict(
     n_heads=hp.choice("n_head", [1, 2, 3, 4, 5, 6]),
     n_hid=hp.choice("n_hid", [100, 200, 250, 300]),
     n_layers=hp.choice("n_layers", [1, 2, 3, 4]),
+    schedule_rate=hp.choice("schedule_rate", [-0.25, -0.5, -1]),
     seed=1111,
     log_interval=10,
 )
