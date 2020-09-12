@@ -68,6 +68,7 @@ def run(
                 data, seed=seed, n_seq=1000, seq_len=bptt, n_tokens=10, p=0.8
             )
         dataset = DebugDataset(data, device)
+        assert bptt == dataset.bptt
         ntokens = dataset.n_tokens + 1
         n_seq = len(dataset)
         size_valid = int(n_seq * 0.2)
