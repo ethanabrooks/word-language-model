@@ -137,7 +137,7 @@ class TransformerModel(nn.Module):
         )
         self.transformer_encoder = TransformerEncoder(encoder_layers, n_layers)
         self.encoder = nn.Embedding(n_tokens, em_size)
-        self.em_size = em_size
+        self.ninp = em_size
         self.decoder = nn.Linear(em_size, n_tokens)
 
         self.init_weights()
@@ -177,6 +177,6 @@ class TransformerModel(nn.Module):
         return F.log_softmax(output, dim=-1).transpose(0, 1)
 
     def encode_pos(self, src):
-        src = src * math.sqrt(self.em_size)
+        src = src * math.sqrt(self.ninp)
         src = self.pos_encoder(src)
         return src

@@ -6,7 +6,6 @@ from typing import Optional
 
 import numpy as np
 import torch
-from ray import tune
 from torch import nn as nn
 from torch.utils.data import DataLoader
 
@@ -27,7 +26,7 @@ class Aggregator(ABC):
 class MeanAggregator(Aggregator):
     def items(self):
         for k, v in self.values.items():
-            yield k, np.mean(v)
+            yield k, torch.mean(torch.stack(v)).item()
 
 
 def run(
@@ -42,7 +41,7 @@ def run(
     log_interval: int,
     lr: float,
     model: str,
-    n_head: int,
+    n_heads: int,
     report: callable,
     save: Path,
     seed: int,
@@ -62,12 +61,14 @@ def run(
     # Load data
     ###############################################################################
 
-    debug_dataset = "debug" in str(data)
-
     eval_batch_size = 10
-    if debug_dataset:
+    if data.name == "debug.npz":
+        if not data.exists():
+            DebugDataset.generate(
+                data, seed=seed, n_seq=1000, seq_len=bptt, n_tokens=10, p=0.8
+            )
         dataset = DebugDataset(data, device)
-        n_tokens = dataset.n_tokens
+        ntokens = dataset.n_tokens + 1
         n_seq = len(dataset)
         size_valid = int(n_seq * 0.2)
         size_test = int(n_seq * 0.1)
@@ -76,7 +77,6 @@ def run(
         )
     else:
         corpus = Corpus(data)
-        n_tokens = len(corpus.dictionary)
         train_data = LMDataset(
             corpus.train, bptt, batch_size=batch_size, device=device
         )  # [104431, 20]
@@ -86,6 +86,7 @@ def run(
         test_data = LMDataset(
             corpus.test, bptt, batch_size=batch_size, device=device
         )  # [24556, 10]
+        ntokens = len(corpus.dictionary)
 
     train_data = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     val_data = DataLoader(val_data, batch_size=batch_size, shuffle=True)
@@ -94,17 +95,15 @@ def run(
     ###############################################################################
     # Build the model
     ###############################################################################
-
-    em_size = (em_size // n_head) * n_head
-
-    recurrent = model not in ["transformer", "ours"]
-    kwargs.update(n_tokens=n_tokens, em_size=em_size)
+    kwargs.update(n_tokens=ntokens, em_size=em_size)
+    recurrent = False
     if model == "transformer":
-        model = models.TransformerModel(n_head=n_head, **kwargs).to(device)
+        model = models.TransformerModel(n_head=n_heads, **kwargs).to(device)
     elif model == "ours":
-        model = ours.TransformerModel(n_head=n_head, **kwargs).to(device)
+        model = ours.TransformerModel(n_head=n_heads, **kwargs).to(device)
     else:
         model = models.RNNModel(model, tied, **kwargs).to(device)
+        recurrent = True
     if load is not None:
         with load.open("rb") as f:
             model.load_state_dict(torch.load(f))
@@ -118,29 +117,45 @@ def run(
     # Training code
     ###############################################################################
 
+    def evaluate(data_source):
+        # Turn on evaluation mode which disables dropout.
+        model.eval()
+        hidden = model.init_hidden(eval_batch_size) if recurrent else None
+        with torch.no_grad():
+            for (inputs, targets) in data_source:
+                targets = targets.flatten()
+                if hidden is None:
+                    output = model(inputs)
+                    output = output.reshape(-1, ntokens)
+                else:
+                    output, hidden = model(inputs, hidden)
+                    hidden = repackage_hidden(hidden)
+                yield len(inputs) * criterion(output, targets).item()
+
     criterion = nn.NLLLoss()
-    best_val_loss = None
 
     def train():
         # Turn on training mode which enables dropout.
         model.train()
-        hidden = model.init_hidden(batch_size) if recurrent else None
-        for batch, (data, targets) in enumerate(train_data):
+        total_loss = 0.0
+        total_acc = 0.0
+        hidden = model.init_hidden(eval_batch_size) if recurrent else None
+        for i, (inputs, targets) in enumerate(train_data):
             targets = targets.flatten()
-
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
-            if not recurrent:
-                output = model(data)
-                output = output.reshape(-1, n_tokens)
+            if hidden is None:
+                outputs = model(inputs)
+                outputs = outputs.reshape(-1, ntokens)
             else:
                 hidden = repackage_hidden(hidden)
-                output, hidden = model(data, hidden)
-            is_accurate = output.max(-1).indices == targets
+                outputs, hidden = model(inputs, hidden)
+            is_accurate = outputs.max(-1).indices == targets
             assert isinstance(is_accurate, torch.Tensor)
             accuracy = torch.mean(is_accurate.float())
-            loss = criterion(output, targets)
+            total_acc += accuracy
+            loss = criterion(outputs, targets)
             loss.backward()
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -148,71 +163,39 @@ def run(
             for p in model.parameters():
                 p.data.add_(p.grad, alpha=-lr)
 
-            # TODO: only save a subset of data/output/targets
-            info = dict(epoch=epoch, batch=batch)
-            mean_info = dict(loss=loss.item(), accuracy=accuracy.item())
-            write_info = dict(
-                data=data[:, 0],
-                output=output.view(*data.shape, -1)[:, 0],
-                targets=targets.view(data.shape)[:, 0],
-            )
-            yield info, mean_info, write_info
+            total_loss += loss.item()
+            logs = dict(epoch=epoch, batches=i)
+            means = dict(accuracy=accuracy, loss=loss)
+            writes = dict(inputs=inputs, outputs=outputs, targets=targets)
+            yield logs, means, writes
             if dry_run:
                 break
 
-    def evaluate(data_source):
-        # Turn on evaluation mode which disables dropout.
-        model.eval()
-        if recurrent:
-            hidden = model.init_hidden(eval_batch_size)
-        with torch.no_grad():
-            for (data, targets) in data_source:
-                targets = targets.flatten()
-                if not recurrent:
-                    output = model(data)
-                    output = output.view(-1, n_tokens)
-                else:
-                    output, hidden = model(data, hidden)
-                    hidden = repackage_hidden(hidden)
-                yield len(data) * criterion(output, targets).item()
-
-    def export_onnx(path, batch_size, seq_len):
+    def export_onnx(path, bsz, seq_len):
         print(
             "The model is also exported in ONNX format at {}".format(
                 onnx_export.absolute()
             )
         )
         model.eval()
-        dummy_input = (
-            torch.LongTensor(seq_len * batch_size)
-            .zero_()
-            .view(-1, batch_size)
-            .to(device)
-        )
-        hidden = model.init_hidden(batch_size)
-        torch.onnx.export(model, (dummy_input, hidden), path)
+        dummy_input = torch.LongTensor(seq_len * bsz).zero_().view(-1, bsz).to(device)
+        hidden = model.init_hidden(bsz)
+        torch.onnx.export(model, (dummy_input, hidden), str(path))
 
+    # Loop over epochs.
+    best_val_loss = None
     # At any point you can hit Ctrl + C to break out of training early.
     try:
         for epoch in range(1, epochs + 1):
-            # epoch_start_time = time.time()
-            means = MeanAggregator()
-            for i, (to_log, to_mean, to_write) in enumerate(train()):
-                means.update(**to_mean)
-                if (i + 1) % log_interval == 0:
-                    report(**to_log)
-                    report(**dict(means.items()))
-                    means = MeanAggregator()
-                    with tune.checkpoint_dir(epoch) as path:
-                        np.savez(
-                            path,
-                            **{
-                                k: v.detach().cpu().numpy() for k, v in to_write.items()
-                            },
-                        )
+            aggregator = MeanAggregator()
+            for batch, (to_log, to_mean, to_write) in enumerate(train()):
+                aggregator.update(**to_mean)
+                if batch % log_interval == 0 and batch > 0:
+                    report(**to_log, **dict(aggregator.items()))
+                    aggregator = MeanAggregator()
 
             val_loss = np.mean(list(evaluate(val_data)))
-            report(val_loss=val_loss)
+            # Save the model if the validation loss is the best we've seen so far.
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
                     torch.save(model.state_dict(), f)
@@ -223,7 +206,6 @@ def run(
     except KeyboardInterrupt:
         print("-" * 89)
         print("Exiting from training early")
-
     # Load the best saved model.
     with save.open("rb") as f:
         model.load_state_dict(torch.load(f))
@@ -236,10 +218,9 @@ def run(
     # Run on test data.
     test_loss = np.mean(list(evaluate(test_data)))
     report(test_loss=test_loss, test_ppl=math.exp(test_loss))
-
     if onnx_export:
         # Export the model in ONNX format.
-        export_onnx(onnx_export, batch_size=1, seq_len=bptt)
+        export_onnx(onnx_export, bsz=1, seq_len=bptt)
 
 
 def repackage_hidden(h):

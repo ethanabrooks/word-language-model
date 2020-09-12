@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 from typing import Optional, List
 from pprint import pprint
+from tabulate import tabulate
 
 import ray
 from hyperopt.pyll import Apply
@@ -61,9 +62,7 @@ def add_arguments(parser):
     parser.add_argument("--last-col-1", type=bool)
     parser.add_argument("--load", type=Path, help="path to load model from")
     parser.add_argument("--local-mode", action="store_true")
-    parser.add_argument(
-        "--log-interval", type=int, default=200, metavar="N", help="report interval"
-    )
+    parser.add_argument("--log-interval", type=int, metavar="N", help="report interval")
     parser.add_argument("--lr", type=float, help="initial learning rate")
     parser.add_argument(
         "--onnx-export",
@@ -81,7 +80,7 @@ def add_arguments(parser):
         help="Name of experiment",
     )
     parser.add_argument(
-        "--n-head",
+        "--n-heads",
         type=int,
         help="the number of heads in the encoder/decoder of the transformer model",
     )
@@ -156,7 +155,13 @@ def main(
     else:
 
         def report(**kwargs):
-            pprint(kwargs)
+            print(
+                tabulate(
+                    {k: [v] for k, v in kwargs.items()},
+                    headers="keys",
+                    tablefmt="pretty",
+                )
+            )
 
         config.update(report=report)
         run(**config)
