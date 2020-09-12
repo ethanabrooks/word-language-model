@@ -139,7 +139,7 @@ def run(
     optimizer = optim.Adam(model.parameters())
 
     def lr_lambda(e):
-        return em_size * min((e + 1) ** (-0.5), (e + 1) * warmup ** (-1.5))
+        return em_size ** (-0.5) * min((e + 1) ** (-0.5), (e + 1) * warmup ** (-1.5))
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
