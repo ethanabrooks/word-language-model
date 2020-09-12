@@ -2,8 +2,9 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import Parameter
 
-from transformer import TransformerEncoderLayer, TransformerEncoder
+from transformer import TransformerEncoderLayer, TransformerEncoder, Transformer
 
 
 class RNNModel(nn.Module):
@@ -132,28 +133,30 @@ class TransformerModel(nn.Module):
         self.model_type = "Transformer"
         self.src_mask = None
         self.pos_encoder = PositionalEncoding(em_size, dropout)
-        encoder_layers = self.build_transformer_encoder_layer(
-            dropout, n_head, n_hid, em_size, **kwargs
-        )
-        self.transformer_encoder = TransformerEncoder(encoder_layers, n_layers)
         self.encoder = nn.Embedding(n_tokens, em_size)
-        self.ninp = em_size
         self.decoder = nn.Linear(em_size, n_tokens)
+        self.transformer = self.build_transformer(
+            d_model=em_size,
+            dim_feedforward=n_hid,
+            n_layers=n_layers,
+            nhead=n_head,
+            **kwargs,
+        )
+        self.em_size = em_size
 
         self.init_weights()
 
     @staticmethod
-    def build_transformer_encoder_layer(dropout, nhead, nhid, ninp, **kwargs):
-        return TransformerEncoderLayer(ninp, nhead, nhid, dropout, **kwargs)
-
-    def _generate_square_subsequent_mask(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = (
-            mask.float()
-            .masked_fill(mask == 0, float("-inf"))
-            .masked_fill(mask == 1, float(0.0))
+    def build_transformer(
+        n_layers, d_model, dim_feedforward, nhead, **kwargs
+    ) -> nn.Transformer:
+        return nn.Transformer(
+            num_encoder_layers=n_layers,
+            num_decoder_layers=n_layers,
+            d_model=d_model,
+            dim_feedforward=dim_feedforward,
+            nhead=nhead,
         )
-        return mask
 
     def init_weights(self):
         initrange = 0.1
@@ -166,17 +169,21 @@ class TransformerModel(nn.Module):
         if has_mask:
             device = src.device
             if self.src_mask is None or self.src_mask.size(0) != len(src):
-                mask = self._generate_square_subsequent_mask(len(src)).to(device)
+                mask = self.transformer.generate_square_subsequent_mask(len(src)).to(
+                    device
+                )
                 self.src_mask = mask
         else:
             self.src_mask = None
 
         src = self.encode_pos(self.encoder(src))
-        output = self.transformer_encoder(src, self.src_mask)
+        output = self.transformer.forward(
+            src, src, src_mask=self.src_mask, tgt_mask=self.src_mask
+        )
         output = self.decoder(output)
         return F.log_softmax(output, dim=-1).transpose(0, 1)
 
     def encode_pos(self, src):
-        src = src * math.sqrt(self.ninp)
+        src = src * math.sqrt(self.em_size)
         src = self.pos_encoder(src)
         return src

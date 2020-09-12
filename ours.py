@@ -97,14 +97,31 @@ class MultiheadAttention(multihead_attention.MultiheadAttention):
 
 
 class TransformerEncoderLayer(transformer.TransformerEncoderLayer):
-    def build_multihead_attention(self, d_model, dropout, nhead, **kwargs):
-        return MultiheadAttention(d_model, nhead, dropout=dropout, **kwargs)
+    def build_multihead_attention(self, *args, **kwargs):
+        return MultiheadAttention(*args, **kwargs)
+
+
+class TransformerDecoderLayer(transformer.TransformerDecoderLayer):
+    def build_multihead_attention(self, *args, **kwargs):
+        return MultiheadAttention(*args, **kwargs)
+
+
+class Transformer(transformer.Transformer):
+    @staticmethod
+    def build_transformer_encoder_layer(*args, **kwargs):
+        return TransformerEncoderLayer(*args, **kwargs)
+
+    @staticmethod
+    def build_transformer_decoder_layer(*args, **kwargs):
+        return TransformerDecoderLayer(*args, **kwargs)
 
 
 class TransformerModel(models.TransformerModel):
     @staticmethod
-    def build_transformer_encoder_layer(dropout, nhead, nhid, ninp, **kwargs):
-        return TransformerEncoderLayer(ninp, nhead, nhid, dropout, **kwargs)
+    def build_transformer(n_layers, **kwargs):
+        return Transformer(
+            num_encoder_layers=n_layers, num_decoder_layers=n_layers, **kwargs
+        )
 
     def encode_pos(self, src):
         return src

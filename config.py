@@ -38,11 +38,11 @@ search = dict(
     em_size=hp.choice("em_size", [50, 100, 200, 250, 300]),
     forward_scan=hp.choice("forward_scan", [True, False]),
     last_col_1=hp.choice("last_col_1", [True, False]),
-    warmup=hp.choice("warmup", [0, 20000, 4000, 6000]),
+    warmup=4000,
     n_heads=hp.choice("n_head", [1, 2, 3, 4, 5, 6]),
     n_hid=hp.choice("n_hid", [100, 200, 250, 300]),
     n_layers=hp.choice("n_layers", [1, 2, 3, 4]),
-    schedule_rate=hp.choice("schedule_rate", [-0.25, -0.5, -1]),
+    schedule_rate=hp.choice("schedule_rate", [-0.1, -0.25, -0.5, -1, -2]),
     seed=1111,
     log_interval=10,
 )

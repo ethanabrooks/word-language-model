@@ -50,6 +50,7 @@ class Transformer(Module):
         activation: str = "relu",
         custom_encoder: Optional[Any] = None,
         custom_decoder: Optional[Any] = None,
+        **kwargs,
     ) -> None:
         super(Transformer, self).__init__()
 
@@ -57,18 +58,30 @@ class Transformer(Module):
             self.encoder = custom_encoder
         else:
             encoder_layer = self.build_transformer_encoder_layer(
-                activation, d_model, dim_feedforward, dropout, nhead
+                activation=activation,
+                d_model=d_model,
+                dim_feedforward=dim_feedforward,
+                dropout=dropout,
+                nhead=nhead,
+                **kwargs,
             )
             encoder_norm = LayerNorm(d_model)
             self.encoder = TransformerEncoder(
-                encoder_layer, num_encoder_layers, encoder_norm
+                encoder_layer,
+                num_encoder_layers,
+                encoder_norm,
             )
 
         if custom_decoder is not None:
             self.decoder = custom_decoder
         else:
             decoder_layer = self.build_transformer_decoder_layer(
-                activation, d_model, dim_feedforward, dropout, nhead
+                activation=activation,
+                d_model=d_model,
+                dim_feedforward=dim_feedforward,
+                dropout=dropout,
+                nhead=nhead,
+                **kwargs,
             )
             decoder_norm = LayerNorm(d_model)
             self.decoder = TransformerDecoder(
@@ -82,18 +95,28 @@ class Transformer(Module):
 
     @staticmethod
     def build_transformer_decoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
+        activation, d_model, dim_feedforward, dropout, nhead, **kwargs
     ):
         return TransformerDecoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation=activation,
+            **kwargs,
         )
 
     @staticmethod
     def build_transformer_encoder_layer(
-        activation, d_model, dim_feedforward, dropout, nhead
+        activation, d_model, dim_feedforward, dropout, nhead, **kwargs
     ):
         return TransformerEncoderLayer(
-            d_model, nhead, dim_feedforward, dropout, activation
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation=activation,
+            **kwargs,
         )
 
     def forward(
@@ -335,11 +358,11 @@ class TransformerEncoderLayer(Module):
         dim_feedforward=2048,
         dropout=0.1,
         activation="relu",
-        **kwargs
+        **kwargs,
     ):
         super(TransformerEncoderLayer, self).__init__()
         self.self_attn = self.build_multihead_attention(
-            d_model, dropout, nhead, **kwargs
+            embed_dim=d_model, dropout=dropout, num_heads=nhead, **kwargs
         )
         # Implementation of Feedforward model
         self.linear1 = Linear(d_model, dim_feedforward)
@@ -354,8 +377,8 @@ class TransformerEncoderLayer(Module):
         self.activation = _get_activation_fn(activation)
 
     @staticmethod
-    def build_multihead_attention(d_model, dropout, nhead, **kwargs):
-        return MultiheadAttention(d_model, nhead, dropout=dropout)
+    def build_multihead_attention(*args, **kwargs):
+        return MultiheadAttention(*args, **kwargs)
 
     def __setstate__(self, state):
         if "activation" not in state:
@@ -412,11 +435,21 @@ class TransformerDecoderLayer(Module):
     """
 
     def __init__(
-        self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"
+        self,
+        d_model,
+        nhead,
+        dim_feedforward=2048,
+        dropout=0.1,
+        activation="relu",
+        **kwargs,
     ):
         super(TransformerDecoderLayer, self).__init__()
-        self.self_attn = self.build_multihead_attention(d_model, dropout, nhead)
-        self.multihead_attn = self.build_multihead_attention(d_model, dropout, nhead)
+        self.self_attn = self.build_multihead_attention(
+            embed_dim=d_model, dropout=dropout, num_heads=nhead, **kwargs
+        )
+        self.multihead_attn = self.build_multihead_attention(
+            embed_dim=d_model, dropout=dropout, num_heads=nhead, **kwargs
+        )
         # Implementation of Feedforward model
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
@@ -432,8 +465,10 @@ class TransformerDecoderLayer(Module):
         self.activation = _get_activation_fn(activation)
 
     @staticmethod
-    def build_multihead_attention(d_model, dropout, nhead):
-        return MultiheadAttention(d_model, nhead, dropout=dropout)
+    def build_multihead_attention(embed_dim, dropout, num_heads, **kwargs):
+        return MultiheadAttention(
+            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout
+        )
 
     def __setstate__(self, state):
         if "activation" not in state:
