@@ -50,7 +50,7 @@ def add_arguments(parser):
     )
     parser.add_argument("--em-size", type=int, help="size of word embeddings")
     parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
-    parser.add_argument("--forward-scan", type=bool)
+    # parser.add_argument("--forward-scan", type=bool)
     parser.add_argument(
         "--gpus-per-trial",
         "-g",
@@ -120,17 +120,19 @@ def main(
     **kwargs,
 ):
     for k, v in kwargs.items():
-        if v is not None:
+        if v is not None or k not in config:
             config[k] = v
+    seed = config.get("seed")
+    if not seed:
+        if not seeds:
+            raise RuntimeError("Either seed must be set or seeds must be non-empty")
+        elif len(seeds) == 1:
+            seed = seeds[0]
+        else:
+            seed = tune.grid_search(seeds)
+    config.update(seed=seed)
 
     config.update(data=data.absolute())
-    if len(seeds) == 0:
-        seed = 0
-    elif len(seeds) == 1:
-        seed = seeds[0]
-    else:
-        seed = tune.grid_search(seeds)
-    config.update(seed=seed)
     if n_samples or local_mode:
         config.update(report=tune.report)
         ray.init(dashboard_host="127.0.0.1", local_mode=local_mode)

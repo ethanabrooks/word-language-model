@@ -18,12 +18,15 @@ default = dict(
     clip=0.25,
     dropout=0.2,
     em_size=200,
+    epochs=40,
     forward_scan=False,
     last_col_1=False,
-    lr=20,
+    log_interval=200,
+    lr=5,
     n_head=2,
     n_hid=200,
     n_layers=2,
+    seed=1111,
 )
 
 search = dict(
