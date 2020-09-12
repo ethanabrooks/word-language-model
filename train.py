@@ -44,7 +44,7 @@ def run(
     n_heads: int,
     report: callable,
     save: Path,
-    schedule_rate: float,
+    lr: float,
     seed: int,
     tied: bool,
     warmup: int,
@@ -137,12 +137,15 @@ def run(
                 yield len(inputs) * criterion(output, targets).item()
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters())
-
-    def lr_lambda(e):
-        return em_size ** (-0.5) * min((e + 1) ** (-0.5), (e + 1) * warmup ** (-1.5))
-
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = (
+        None
+        if warmup is None
+        else optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda e: em_size ** (-0.5) * min(e ** (-0.5), e * warmup ** (-1.5)),
+        )
+    )
 
     def train():
         # Turn on training mode which enables dropout.
@@ -170,12 +173,13 @@ def run(
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
-            scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
 
             logs = dict(epoch=epoch, batches=i)
-            means = dict(
-                accuracy=accuracy.item(), loss=loss.item(), lr=scheduler.get_lr()
-            )
+            if scheduler is not None:
+                logs.update(lr=scheduler.get_lr())
+            means = dict(accuracy=accuracy.item(), loss=loss.item())
             writes = dict(inputs=inputs[0], outputs=outputs[0], targets=targets[0])
             yield logs, means, writes
             if dry_run:

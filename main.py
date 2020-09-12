@@ -63,6 +63,7 @@ def add_arguments(parser):
     parser.add_argument("--load", type=Path, help="path to load model from")
     parser.add_argument("--local-mode", action="store_true")
     parser.add_argument("--log-interval", type=int, metavar="N", help="report interval")
+    parser.add_argument("--lr", type=float, help="learning rate")
     parser.add_argument("--warmup", type=int, help="")
     parser.add_argument(
         "--onnx-export",
@@ -94,7 +95,6 @@ def add_arguments(parser):
     parser.add_argument(
         "--save", type=Path, default="model.pt", help="path to save the final model"
     )
-    parser.add_argument("--schedule-rate", type=float)
     parser.add_argument(
         "--seed",
         type=int,
