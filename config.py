@@ -38,9 +38,11 @@ search = dict(
     forward_scan=hp.choice("forward_scan", [True, False]),
     last_col_1=hp.choice("last_col_1", [True, False]),
     lr=hp.choice("lr", [1, 2, 5, 10]),
-    n_head=hp.choice("n_head", [1, 2, 3, 4, 5, 6]),
+    n_heads=hp.choice("n_head", [1, 2, 3, 4, 5, 6]),
     n_hid=hp.choice("n_hid", [100, 200, 250, 300]),
     n_layers=hp.choice("n_layers", [1, 2, 3, 4]),
+    seed=1111,
+    log_interval=10,
 )
 
 configs = dict(search=search, default=default)
