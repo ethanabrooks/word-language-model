@@ -29,7 +29,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--cpus-per-trial",
         "-c",
-        type=int,
+        type=float,
         default=6,
         help="CPU resources to allocate per trial.",
     )
@@ -55,8 +55,8 @@ def add_arguments(parser):
     parser.add_argument(
         "--gpus-per-trial",
         "-g",
-        type=int,
-        default=1,
+        type=float,
+        default=0.25,
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
     parser.add_argument("--last-col-1", type=bool)
