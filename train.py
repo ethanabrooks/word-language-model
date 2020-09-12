@@ -65,7 +65,7 @@ def run(
     if data.name == "debug.npz":
         if not data.exists():
             DebugDataset.generate(
-                data, seed=seed, n_seq=1000, seq_len=bptt, n_tokens=10, p=0.8
+                data, seed=seed, n_seq=10000, seq_len=bptt, n_tokens=10, p=0.8
             )
         dataset = DebugDataset(data, device)
         assert bptt == dataset.bptt
