@@ -6,7 +6,8 @@ from typing import Optional
 
 import numpy as np
 import torch
-from torch import nn as nn
+from ray import tune
+from torch import nn as nn, optim
 from torch.utils.data import DataLoader
 
 import models
@@ -39,13 +40,13 @@ def run(
     em_size: int,
     epochs: int,
     log_interval: int,
-    lr: float,
     model: str,
     n_heads: int,
     report: callable,
     save: Path,
     seed: int,
     tied: bool,
+    warmup: int,
     load: Optional[Path] = None,
     onnx_export: Optional[Path] = None,
     **kwargs,
@@ -134,16 +135,22 @@ def run(
                     hidden = repackage_hidden(hidden)
                 yield len(inputs) * criterion(output, targets).item()
 
-    criterion = nn.NLLLoss()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters())
+
+    def lr_lambda(e):
+        return em_size * min((e + 1) ** (-0.5), (e + 1) * warmup ** (-1.5))
+
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     def train():
         # Turn on training mode which enables dropout.
         model.train()
-        total_loss = 0.0
-        total_acc = 0.0
-        hidden = model.init_hidden(eval_batch_size) if recurrent else None
+        hidden = model.init_hidden(batch_size) if recurrent else None
         for i, (inputs, targets) in enumerate(train_data):
             targets = targets.flatten()
+            optimizer.zero_grad()
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
@@ -156,16 +163,14 @@ def run(
             is_accurate = outputs.max(-1).indices == targets
             assert isinstance(is_accurate, torch.Tensor)
             accuracy = torch.mean(is_accurate.float())
-            total_acc += accuracy
             loss = criterion(outputs, targets)
             loss.backward()
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-            for p in model.parameters():
-                p.data.add_(p.grad, alpha=-lr)
+            optimizer.step()
+            scheduler.step()
 
-            total_loss += loss.item()
             logs = dict(epoch=epoch, batches=i)
             means = dict(accuracy=accuracy, loss=loss)
             writes = dict(inputs=inputs, outputs=outputs, targets=targets)
@@ -197,14 +202,11 @@ def run(
                     aggregator = MeanAggregator()
 
             val_loss = np.mean(list(evaluate(val_data)))
-            # Save the model if the validation loss is the best we've seen so far.
+            report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
                     torch.save(model.state_dict(), f)
                 best_val_loss = val_loss
-            else:
-                # Anneal the learning rate if no improvement has been seen in the validation dataset.
-                lr /= 4.0
     except KeyboardInterrupt:
         print("-" * 89)
         print("Exiting from training early")

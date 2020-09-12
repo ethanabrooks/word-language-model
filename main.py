@@ -51,7 +51,7 @@ def add_arguments(parser):
     )
     parser.add_argument("--em-size", type=int, help="size of word embeddings")
     parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
-    # parser.add_argument("--forward-scan", type=bool)
+    parser.add_argument("--forward-scan", type=bool)
     parser.add_argument(
         "--gpus-per-trial",
         "-g",
@@ -63,7 +63,7 @@ def add_arguments(parser):
     parser.add_argument("--load", type=Path, help="path to load model from")
     parser.add_argument("--local-mode", action="store_true")
     parser.add_argument("--log-interval", type=int, metavar="N", help="report interval")
-    parser.add_argument("--lr", type=float, help="initial learning rate")
+    parser.add_argument("--warmup", type=int, help="")
     parser.add_argument(
         "--onnx-export",
         type=Path,
