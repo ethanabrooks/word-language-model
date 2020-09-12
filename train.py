@@ -95,6 +95,7 @@ def run(
     ###############################################################################
     # Build the model
     ###############################################################################
+    em_size = (em_size // n_heads) * n_heads
     kwargs.update(n_tokens=ntokens, em_size=em_size)
     recurrent = False
     if model == "transformer":
