@@ -27,7 +27,7 @@ class Aggregator(ABC):
 class MeanAggregator(Aggregator):
     def items(self):
         for k, v in self.values.items():
-            yield k, torch.mean(torch.stack(v)).item()
+            yield k, np.mean(v)
 
 
 def run(
@@ -172,8 +172,10 @@ def run(
             scheduler.step()
 
             logs = dict(epoch=epoch, batches=i)
-            means = dict(accuracy=accuracy, loss=loss)
-            writes = dict(inputs=inputs, outputs=outputs, targets=targets)
+            means = dict(
+                accuracy=accuracy.item(), loss=loss.item(), lr=scheduler.get_lr()
+            )
+            writes = dict(inputs=inputs[0], outputs=outputs[0], targets=targets[0])
             yield logs, means, writes
             if dry_run:
                 break
