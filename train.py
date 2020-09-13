@@ -135,7 +135,7 @@ def run(
                     hidden = repackage_hidden(hidden)
                 yield len(inputs) * criterion(output, targets).item()
 
-    criterion = nn.NLLLoss()
+    criterion = nn.CrossEntropyLoss()
 
     def train():
         # Turn on training mode which enables dropout.
