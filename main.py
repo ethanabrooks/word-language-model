@@ -29,7 +29,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--cpus-per-trial",
         "-c",
-        type=int,
+        type=float,
         default=6,
         help="CPU resources to allocate per trial.",
     )
@@ -51,19 +51,19 @@ def add_arguments(parser):
     )
     parser.add_argument("--em-size", type=int, help="size of word embeddings")
     parser.add_argument("--epochs", type=int, default=40, help="upper epoch limit")
-    # parser.add_argument("--forward-scan", type=bool)
+    parser.add_argument("--forward-scan", type=bool)
     parser.add_argument(
         "--gpus-per-trial",
         "-g",
-        type=int,
-        default=1,
+        type=float,
+        default=0.25,
         help="GPU resources to allocate per trial. Note that GPUs will not be assigned unless you specify them.",
     )
     parser.add_argument("--last-col-1", type=bool)
     parser.add_argument("--load", type=Path, help="path to load model from")
     parser.add_argument("--local-mode", action="store_true")
     parser.add_argument("--log-interval", type=int, metavar="N", help="report interval")
-    parser.add_argument("--lr", type=float, help="initial learning rate")
+    parser.add_argument("--lr", type=float, help="learning rate")
     parser.add_argument(
         "--onnx-export",
         type=Path,
