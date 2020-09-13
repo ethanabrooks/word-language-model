@@ -6,7 +6,8 @@ from typing import Optional
 
 import numpy as np
 import torch
-from torch import nn as nn
+from ray import tune
+from torch import nn as nn, optim
 from torch.utils.data import DataLoader
 
 import models
@@ -26,7 +27,7 @@ class Aggregator(ABC):
 class MeanAggregator(Aggregator):
     def items(self):
         for k, v in self.values.items():
-            yield k, torch.mean(torch.stack(v)).item()
+            yield k, np.mean(v)
 
 
 def run(
@@ -65,7 +66,7 @@ def run(
     if data.name == "debug.npz":
         if not data.exists():
             DebugDataset.generate(
-                data, seed=seed, n_seq=1000, seq_len=bptt, n_tokens=10, p=0.8
+                data, seed=seed, n_seq=10000, seq_len=bptt, n_tokens=10, p=0.8
             )
         dataset = DebugDataset(data, device)
         assert bptt == dataset.bptt
@@ -139,11 +140,10 @@ def run(
     def train():
         # Turn on training mode which enables dropout.
         model.train()
-        total_loss = 0.0
-        total_acc = 0.0
-        hidden = model.init_hidden(eval_batch_size) if recurrent else None
+        hidden = model.init_hidden(batch_size) if recurrent else None
         for i, (inputs, targets) in enumerate(train_data):
             targets = targets.flatten()
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             model.zero_grad()
@@ -156,7 +156,6 @@ def run(
             is_accurate = outputs.max(-1).indices == targets
             assert isinstance(is_accurate, torch.Tensor)
             accuracy = torch.mean(is_accurate.float())
-            total_acc += accuracy
             loss = criterion(outputs, targets)
             loss.backward()
 
@@ -165,10 +164,9 @@ def run(
             for p in model.parameters():
                 p.data.add_(p.grad, alpha=-lr)
 
-            total_loss += loss.item()
             logs = dict(epoch=epoch, batches=i)
-            means = dict(accuracy=accuracy, loss=loss)
-            writes = dict(inputs=inputs, outputs=outputs, targets=targets)
+            means = dict(accuracy=accuracy.item(), loss=loss.item(), lr=lr)
+            writes = dict(inputs=inputs[0], outputs=outputs[0], targets=targets[0])
             yield logs, means, writes
             if dry_run:
                 break
@@ -197,7 +195,7 @@ def run(
                     aggregator = MeanAggregator()
 
             val_loss = np.mean(list(evaluate(val_data)))
-            # Save the model if the validation loss is the best we've seen so far.
+            report(val_loss=val_loss)
             if not best_val_loss or val_loss < best_val_loss:
                 with save.open("wb") as f:
                     torch.save(model.state_dict(), f)
